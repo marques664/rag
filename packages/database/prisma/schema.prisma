@@ -1,0 +1,14 @@
+// Sprint 1 establishes the Prisma configuration and PostgreSQL + pgvector connection.
+// Core domain models (Organizations, Users, Memberships, Documents, DocumentChunks, etc.)
+// will be introduced incrementally starting in Sprint 2.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
