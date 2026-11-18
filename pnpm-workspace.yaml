@@ -7,4 +7,5 @@ verifyDepsBeforeRun: false
 allowBuilds:
   '@prisma/engines': true
   esbuild: true
+  msgpackr-extract: false
   prisma: true

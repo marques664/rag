@@ -1,9 +1,10 @@
-import type { DatabaseClient } from '@enterprise-ai/database';
-import { API_PREFIX } from '@enterprise-ai/shared';
+import { MembershipRole, type DatabaseClient } from '@enterprise-ai/database';
+import { API_PREFIX, MAX_DOCUMENT_FILE_SIZE_BYTES } from '@enterprise-ai/shared';
 import type {
   DatabaseCheckResult,
   DependencyCheckResult,
 } from '@enterprise-ai/shared';
+import fastifyMultipart from '@fastify/multipart';
 import {
   serializerCompiler,
   validatorCompiler,
@@ -11,7 +12,10 @@ import {
 } from '@fastify/type-provider-zod';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { LevelWithSilent } from 'pino';
+import type { DocumentQueueService } from './infrastructure/queue.js';
+import type { DocumentStorageService } from './infrastructure/storage.js';
 import { createAuthenticateHook } from './middleware/authenticate.js';
+import { createRequireOrganizationRoleHook } from './middleware/organization-context.js';
 import { AuthController } from './modules/auth/auth.controller.js';
 import { AuthRepository } from './modules/auth/auth.repository.js';
 import { registerAuthRoutes } from './modules/auth/auth.routes.js';
@@ -19,6 +23,10 @@ import {
   AuthService,
   type AuthServiceConfig,
 } from './modules/auth/auth.service.js';
+import { DocumentsController } from './modules/documents/documents.controller.js';
+import { DocumentsRepository } from './modules/documents/documents.repository.js';
+import { registerDocumentRoutes } from './modules/documents/documents.routes.js';
+import { DocumentsService } from './modules/documents/documents.service.js';
 import { registerHealthRoutes } from './modules/health/health.routes.js';
 import { OrganizationsController } from './modules/organizations/organizations.controller.js';
 import { OrganizationsRepository } from './modules/organizations/organizations.repository.js';
@@ -31,6 +39,9 @@ export interface BuildAppOptions {
   logLevel?: LevelWithSilent;
   database?: DatabaseClient;
   authConfig?: AuthServiceConfig;
+  documentStorage?: DocumentStorageService;
+  documentQueue?: DocumentQueueService;
+  maxDocumentFileSizeBytes?: number;
   checkDatabase: () => Promise<DatabaseCheckResult>;
   checkRedis: () => Promise<DependencyCheckResult>;
 }
@@ -61,9 +72,22 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
           },
   }).withTypeProvider<ZodTypeProvider>();
 
+  const maxDocumentFileSizeBytes =
+    options.maxDocumentFileSizeBytes ?? MAX_DOCUMENT_FILE_SIZE_BYTES;
+
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   app.decorateRequest('auth', null);
+  app.decorateRequest('organizationContext', null);
+
+  app.register(fastifyMultipart, {
+    throwFileSizeLimit: true,
+    limits: {
+      files: 1,
+      fields: 10,
+      fileSize: maxDocumentFileSizeBytes,
+    },
+  });
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof AppError) {
@@ -127,6 +151,37 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       organizationsService,
     );
 
+    const documentDeps =
+      options.documentStorage && options.documentQueue
+        ? (() => {
+            const documentsRepository = new DocumentsRepository(database);
+            const documentsService = new DocumentsService(
+              documentsRepository,
+              options.documentStorage,
+              options.documentQueue,
+              { maxFileSizeBytes: maxDocumentFileSizeBytes },
+              app.log,
+            );
+            const documentsController = new DocumentsController(
+              documentsService,
+              maxDocumentFileSizeBytes,
+            );
+
+            return {
+              controller: documentsController,
+              authenticate,
+              requireMember: createRequireOrganizationRoleHook(
+                organizationsRepository,
+                MembershipRole.MEMBER,
+              ),
+              requireAdmin: createRequireOrganizationRoleHook(
+                organizationsRepository,
+                MembershipRole.ADMIN,
+              ),
+            };
+          })()
+        : null;
+
     app.register(
       async (instance) => {
         await registerAuthRoutes(instance, {
@@ -137,6 +192,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
           controller: organizationsController,
           authenticate,
         });
+        if (documentDeps) {
+          await registerDocumentRoutes(instance, documentDeps);
+        }
       },
       { prefix: API_PREFIX },
     );

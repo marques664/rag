@@ -1,5 +1,6 @@
 // Sprint 1: Prisma configuration & PostgreSQL + pgvector connection.
 // Sprint 2: Core identity, organization, membership, invitation, and session models.
+// Sprint 3: Document ingestion, chunk persistence, and processing job lifecycle models.
 
 generator client {
   provider            = "prisma-client"
@@ -24,6 +25,20 @@ enum InvitationStatus {
   REVOKED
 }
 
+enum DocumentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ProcessingJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 model Organization {
   id        String   @id @default(uuid()) @db.Uuid
   name      String
@@ -31,8 +46,10 @@ model Organization {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  memberships Membership[]
-  invitations OrganizationInvitation[]
+  memberships    Membership[]
+  invitations    OrganizationInvitation[]
+  documents      Document[]
+  documentChunks DocumentChunk[]
 
   @@map("organizations")
 }
@@ -45,9 +62,10 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  memberships     Membership[]
-  refreshTokens   RefreshToken[]
-  sentInvitations OrganizationInvitation[] @relation("InvitedByUser")
+  memberships       Membership[]
+  refreshTokens     RefreshToken[]
+  sentInvitations   OrganizationInvitation[] @relation("InvitedByUser")
+  uploadedDocuments Document[]               @relation("UploadedDocuments")
 
   @@map("users")
 }
@@ -104,4 +122,71 @@ model OrganizationInvitation {
   @@index([organizationId, email])
   @@index([email, status])
   @@map("organization_invitations")
+}
+
+model Document {
+  id                String         @id @default(uuid()) @db.Uuid
+  organizationId    String         @map("organization_id") @db.Uuid
+  uploadedByUserId  String?        @map("uploaded_by_user_id") @db.Uuid
+  filename          String
+  storageKey        String         @unique @map("storage_key")
+  mimeType          String         @map("mime_type")
+  fileSize          Int            @map("file_size")
+  checksum          String
+  status            DocumentStatus @default(PENDING)
+  pageCount         Int?           @map("page_count")
+  processingVersion Int            @default(1) @map("processing_version")
+  errorMessage      String?        @map("error_message")
+  processedAt       DateTime?      @map("processed_at")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uploadedBy     User?           @relation("UploadedDocuments", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  chunks         DocumentChunk[]
+  processingJobs ProcessingJob[]
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, status])
+  @@index([organizationId, checksum])
+  @@map("documents")
+}
+
+model DocumentChunk {
+  id             String   @id @default(uuid()) @db.Uuid
+  documentId     String   @map("document_id") @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  content        String
+  pageNumber     Int      @map("page_number")
+  chunkIndex     Int      @map("chunk_index")
+  tokenCount     Int      @map("token_count")
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  document     Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+  @@index([documentId, pageNumber])
+  @@index([organizationId, documentId])
+  @@map("document_chunks")
+}
+
+model ProcessingJob {
+  id          String              @id @default(uuid()) @db.Uuid
+  documentId  String              @map("document_id") @db.Uuid
+  bullmqJobId String?             @map("bullmq_job_id")
+  status      ProcessingJobStatus @default(PENDING)
+  attempts    Int                 @default(0)
+  error       String?
+  startedAt   DateTime?           @map("started_at")
+  completedAt DateTime?           @map("completed_at")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, createdAt])
+  @@index([status])
+  @@map("processing_jobs")
 }

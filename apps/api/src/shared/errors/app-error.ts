@@ -42,3 +42,30 @@ export class ConflictError extends AppError {
     super(409, code, message);
   }
 }
+
+export class PayloadTooLargeError extends AppError {
+  constructor(
+    message = 'Payload exceeds maximum allowed size',
+    code = 'PAYLOAD_TOO_LARGE',
+  ) {
+    super(413, code, message);
+  }
+}
+
+export class UnsupportedMediaTypeError extends AppError {
+  constructor(
+    message = 'Unsupported media type',
+    code = 'UNSUPPORTED_MEDIA_TYPE',
+  ) {
+    super(415, code, message);
+  }
+}
+
+export class ServiceUnavailableError extends AppError {
+  constructor(
+    message = 'Dependent service is temporarily unavailable',
+    code = 'SERVICE_UNAVAILABLE',
+  ) {
+    super(503, code, message);
+  }
+}

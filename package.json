@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter @enterprise-ai/api dev",
+    "dev:worker": "pnpm --filter @enterprise-ai/worker dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",

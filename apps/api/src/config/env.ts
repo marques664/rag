@@ -1,3 +1,4 @@
+import { MAX_DOCUMENT_FILE_SIZE_BYTES } from '@enterprise-ai/shared';
 import { z } from 'zod';
 
 const envSchema = z.object({
@@ -14,6 +15,21 @@ const envSchema = z.object({
     .min(32, 'JWT_SECRET must be at least 32 characters long'),
   JWT_ACCESS_EXPIRES_IN: z.string().min(1).default('15m'),
   JWT_REFRESH_EXPIRES_DAYS: z.coerce.number().int().min(1).max(90).default(7),
+  MINIO_ENDPOINT: z.string().min(1).default('localhost'),
+  MINIO_PORT: z.coerce.number().int().min(1).max(65535).default(9000),
+  MINIO_USE_SSL: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  MINIO_ROOT_USER: z.string().min(1).default('minioadmin'),
+  MINIO_ROOT_PASSWORD: z.string().min(1).default('minioadmin'),
+  MINIO_BUCKET: z.string().min(1).default('enterprise-knowledge-documents'),
+  MAX_DOCUMENT_FILE_SIZE_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1024)
+    .max(100 * 1024 * 1024)
+    .default(MAX_DOCUMENT_FILE_SIZE_BYTES),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

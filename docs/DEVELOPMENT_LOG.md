@@ -59,3 +59,28 @@ Implemented the complete Sprint 2 Backend Core: PostgreSQL relational models and
 - `pnpm db:generate` and `prisma migrate dev --name sprint2_backend_core`: succeeded.
 - `pnpm typecheck`, `pnpm lint`, `pnpm build`: all passed with exit code `0`.
 - `pnpm test` (against live `enterprise_knowledge_ai_test` PostgreSQL): **5 test files, 18 tests passed**.
+
+## 2026-11-18 — Sprint 3 Document Processing Pipeline (MinIO, BullMQ, PDF Extraction, Chunking)
+
+### Summary
+
+Implemented the complete Sprint 3 asynchronous PDF document ingestion pipeline: database schema & migration, shared queue/chunking contracts, MinIO S3 storage integration, tenant-scoped Fastify document endpoints, independent `apps/worker` BullMQ + `unpdf` processing service, and comprehensive unit + live integration tests against PostgreSQL, Redis, and MinIO.
+
+### Implemented
+
+- **Shared Contracts (`packages/shared`)**: Exported `DOCUMENT_PROCESSING_QUEUE_NAME`, `DOCUMENT_PROCESS_JOB_NAME`, `DEFAULT_CHUNK_SIZE_TOKENS` (`500`), `DEFAULT_CHUNK_OVERLAP_TOKENS` (`75`), `MAX_DOCUMENT_FILE_SIZE_BYTES` (`25 MiB`), `ALLOWED_DOCUMENT_MIME_TYPES`, `DEFAULT_JOB_ATTEMPTS` (`3`), `DEFAULT_JOB_BACKOFF_MS` (`2000`), `DOCUMENT_STATUS`, `PROCESSING_JOB_STATUS`, `DocumentProcessJobPayload`, and `DocumentChunkMetadata`.
+- **Database Schema & Migration (`packages/database`)**: Added `Document`, `DocumentChunk`, `ProcessingJob`, `DocumentStatus`, and `ProcessingJobStatus` via migration `20261118133209_sprint3_document_processing` (with `processingVersion` fencing, `@@unique([documentId, chunkIndex])`, denormalized `organization_id` on `document_chunks`, and cascading deletes).
+- **Document Upload & Management API (`apps/api`)**:
+  - Added MinIO S3 client (`apps/api/src/infrastructure/storage.ts`), BullMQ queue producer (`apps/api/src/infrastructure/queue.ts`), and pre-stream `x-organization-id` membership/RBAC hook (`apps/api/src/middleware/organization-context.ts`).
+  - Implemented `/api/v1/documents` endpoints (`POST /documents`, `GET /documents`, `GET /documents/:id`, `GET /documents/:id/status`, `POST /documents/:id/reprocess`, `DELETE /documents/:id`) with filename sanitization, `.pdf` / `application/pdf` / `%PDF-` magic-byte validation, SHA-256 checksums, MinIO upload compensation, and DB-first deletion.
+- **Background Worker (`apps/worker`)**:
+  - Scaffolded `@enterprise-ai/worker` with Zod env validation, Pino logging, dedicated Redis connection (`maxRetriesPerRequest: null`), MinIO PDF reader, `UnpdfTextExtractor`, `PageAwareTokenChunker`, `processDocumentJob` (`processingVersion` fencing, `SELECT ... FOR UPDATE` atomic chunk replacement, retry/attempt tracking, and `UnrecoverableError` handling), and graceful `SIGINT`/`SIGTERM` shutdown.
+- **Automated Tests & Vitest Config**:
+  - Added API unit tests (`apps/api/tests/documents.unit.test.ts`), worker unit tests (`apps/worker/tests/pdf-extractor.test.ts`, `chunker.test.ts`, `document-processor.test.ts`), and live integration suites (`apps/api/tests/documents.integration.test.ts`, `apps/worker/tests/document-process.integration.test.ts`).
+  - Configured `fileParallelism: false` in root `vitest.config.ts` so integration suites share `enterprise_knowledge_ai_test` and Redis/MinIO deterministically.
+
+### Verification
+
+- `pnpm db:generate`, `prisma migrate dev --name sprint3_document_processing`, and `prisma migrate deploy` (against `enterprise_knowledge_ai_test`): succeeded.
+- `pnpm typecheck`, `pnpm lint`, `pnpm build`: all passed with exit code `0`.
+- `pnpm test` (against live `enterprise_knowledge_ai_test` PostgreSQL, Redis, and MinIO): **11 test files, 55 tests passed (55/55)**.
