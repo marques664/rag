@@ -89,15 +89,25 @@ describe('loadEnv', () => {
     const env = loadEnv({
       DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/test',
       REDIS_URL: 'redis://localhost:6379',
+      JWT_SECRET: 'test-only-secret-key-with-minimum-32-chars',
     });
 
     expect(env.NODE_ENV).toBe('development');
     expect(env.API_PORT).toBe(3001);
     expect(env.API_HOST).toBe('0.0.0.0');
     expect(env.LOG_LEVEL).toBe('info');
+    expect(env.JWT_ACCESS_EXPIRES_IN).toBe('15m');
+    expect(env.JWT_REFRESH_EXPIRES_DAYS).toBe(7);
   });
 
   it('throws a clear error when required variables are missing', () => {
     expect(() => loadEnv({})).toThrow(/DATABASE_URL/);
+    expect(() =>
+      loadEnv({
+        DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/test',
+        REDIS_URL: 'redis://localhost:6379',
+        JWT_SECRET: 'too-short',
+      }),
+    ).toThrow(/JWT_SECRET/);
   });
 });

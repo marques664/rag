@@ -35,3 +35,21 @@
 - **Context**: Official `minio/minio` and `minio/mc` repositories on Docker Hub returned `pull access denied / repository does not exist` because MinIO removed its Docker Hub images.
 - **Decision**: Use `cgr.dev/chainguard/minio:latest` and `cgr.dev/chainguard/minio-client:latest` in `docker-compose.yml`, configuring `minio-init` via `MC_HOST_local` so bucket initialization runs directly via `/usr/bin/mc` without a wrapper script.
 - **Consequences**: Reproducible anonymous pulls from Chainguard's public registry, non-root container execution, and verified S3-compatible local storage with automatic bucket creation.
+
+## TD-007: Built-in Node.js `scrypt` + `jose` JWTs + Refresh Token Family Rotation
+
+- **Context**: Sprint 2 requires secure password hashing, stateless API authentication, and revocable sessions without introducing heavy native dependencies or framework lock-in.
+- **Decision**: Use Node.js built-in `crypto.scrypt` (`N=16384, r=8, p=1`, random 16-byte salt, `timingSafeEqual`) for passwords, `jose` (`HS256`) for short-lived access JWTs, and opaque 32-byte refresh tokens stored as SHA-256 hashes with `familyId` tracking in PostgreSQL. Reusing an already-rotated refresh token atomically revokes all tokens in that `familyId`.
+- **Consequences**: Zero native C++ build dependencies on Windows/Linux, constant-time verification, and defense against stolen refresh token replay.
+
+## TD-008: Email-Bound Organization Invitation Acceptance
+
+- **Context**: Users can belong to multiple organizations with different roles (`OWNER`, `ADMIN`, `MEMBER`), and Sprint 2 has no outbound email delivery service yet.
+- **Decision**: `POST /api/v1/organizations/:id/invitations` creates a `PENDING` `OrganizationInvitation` with an expiry timestamp. Authenticated users list their pending invitations (`GET /api/v1/organizations/invitations`) and accept via `POST /api/v1/organizations/invitations/:invitationId/accept`, which enforces `invitation.email === request.auth.email` and atomically transitions the invitation to `ACCEPTED` while creating the `Membership`.
+- **Consequences**: Prevents unauthorized users from claiming another user's invitation without requiring an external SMTP server in Sprint 2.
+
+## TD-009: Isolated `enterprise_knowledge_ai_test` Database for Integration Tests
+
+- **Context**: Running real PostgreSQL integration tests against the primary development database risks wiping or polluting manual development data.
+- **Decision**: Provision a separate `enterprise_knowledge_ai_test` database (with `pgvector` and deployed Prisma migrations) configured via `TEST_DATABASE_URL`, and truncate test tables before each integration test case.
+- **Consequences**: Fast, deterministic integration testing against real PostgreSQL constraints, transactions, and indexes without affecting local development data.

@@ -1,8 +1,12 @@
-import 'dotenv/config';
+import path from 'node:path';
 import { checkDatabaseHealth, createDatabaseClient } from '@enterprise-ai/database';
+import { config as loadDotenv } from 'dotenv';
 import { buildApp } from './app.js';
 import { loadEnv } from './config/env.js';
 import { checkRedisHealth, createRedisClient } from './infrastructure/redis.js';
+
+loadDotenv({ path: path.resolve(import.meta.dirname, '../../../.env') });
+loadDotenv();
 
 async function startServer(): Promise<void> {
   const env = loadEnv();
@@ -12,6 +16,12 @@ async function startServer(): Promise<void> {
   const app = buildApp({
     nodeEnv: env.NODE_ENV,
     logLevel: env.LOG_LEVEL,
+    database,
+    authConfig: {
+      jwtSecret: env.JWT_SECRET,
+      accessTokenExpiresIn: env.JWT_ACCESS_EXPIRES_IN,
+      refreshTokenExpiresDays: env.JWT_REFRESH_EXPIRES_DAYS,
+    },
     checkDatabase: () => checkDatabaseHealth(database),
     checkRedis: () => checkRedisHealth(redis),
   });

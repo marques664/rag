@@ -38,3 +38,24 @@ Verified the Git repository initialization, resolved the Docker Hub `minio/minio
 - `GET http://127.0.0.1:3001/health`: returned `200` (`status: "ok"`).
 - `GET http://127.0.0.1:3001/api/v1/ready`: returned `200` (`status: "ready"`, `database.status: "up"`, `pgvectorEnabled: true`, `redis.status: "up"`).
 - `GET http://127.0.0.1:9000/minio/health/live`: returned `HTTP 200`.
+
+## 2026-11-18 — Sprint 2 Backend Core (Auth, Organizations, RBAC, Tenant Isolation)
+
+### Summary
+
+Implemented the complete Sprint 2 Backend Core: PostgreSQL relational models and migrations, `scrypt` password hashing, JWT + refresh token rotation with reuse detection, multi-organization management, invitation workflow, RBAC (`OWNER`, `ADMIN`, `MEMBER`), and cross-tenant isolation integration tests.
+
+### Implemented
+
+- Prisma schema & migration `20261118131305_sprint2_backend_core` (`Organization`, `User`, `Membership`, `RefreshToken`, `OrganizationInvitation`, `MembershipRole`, `InvitationStatus`).
+- Security & error primitives (`apps/api/src/shared/errors/app-error.ts`, `apps/api/src/shared/security/password.ts`, `apps/api/src/shared/security/tokens.ts`).
+- Authentication middleware and RBAC (`apps/api/src/middleware/authenticate.ts`, `apps/api/src/middleware/rbac.ts`, `apps/api/src/types/fastify.d.ts`).
+- `auth` module (`apps/api/src/modules/auth/*`): `register`, `login`, `refresh`, `logout`, `me`.
+- `organizations` module (`apps/api/src/modules/organizations/*`): create, list, get, update, list members, create invitation, list pending invitations, accept invitation, update member role.
+- Unit tests (`apps/api/tests/security.test.ts`) and real PostgreSQL integration tests (`apps/api/tests/backend-core.integration.test.ts`) running against `enterprise_knowledge_ai_test`.
+
+### Verification
+
+- `pnpm db:generate` and `prisma migrate dev --name sprint2_backend_core`: succeeded.
+- `pnpm typecheck`, `pnpm lint`, `pnpm build`: all passed with exit code `0`.
+- `pnpm test` (against live `enterprise_knowledge_ai_test` PostgreSQL): **5 test files, 18 tests passed**.

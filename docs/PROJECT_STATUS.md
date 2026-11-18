@@ -2,47 +2,45 @@
 
 ## Current Sprint
 
-- **Sprint 1 — Foundation**: **Completed**
-- **Next Sprint**: **Sprint 2 — Backend Core** (Ready to start)
+- **Sprint 2 — Backend Core**: **Completed**
+- **Next Sprint**: **Sprint 3 — Document Processing** (Ready to start)
 
 ## Current Task
 
-- Sprint 1 verified end-to-end against live Docker Compose containers; ready to begin Sprint 2 (Database models, Authentication, Organizations, Memberships, RBAC, and Cross-tenant isolation).
+- Sprint 2 backend core (database models, auth, organizations, memberships, RBAC, tenant isolation, and real PostgreSQL integration tests) is complete and verified; ready for Sprint 3 (asynchronous PDF ingestion with MinIO + BullMQ worker).
 
-## Completed Tasks (Sprint 1)
+## Completed Tasks
 
-- [x] Initialized Git repository (`main`)
-- [x] Configured `pnpm` monorepo (`pnpm-workspace.yaml`, root `package.json`, shared scripts)
-- [x] Configured strict TypeScript (`tsconfig.base.json` + per-package `tsconfig.json` and `tsconfig.typecheck.json`)
-- [x] Configured Docker Compose (`docker-compose.yml`) with PostgreSQL 17 (`pgvector/pgvector:pg17`), Redis 7 (`redis:7-alpine`), MinIO (`cgr.dev/chainguard/minio:latest`), and bucket bootstrap (`cgr.dev/chainguard/minio-client:latest`)
-- [x] Added `infrastructure/postgres/init.sql` to enable `CREATE EXTENSION IF NOT EXISTS vector;`
-- [x] Started Docker Compose locally and verified PostgreSQL (`pgvector`), Redis, and MinIO healthchecks
-- [x] Configured Prisma ORM v7 (`packages/database/prisma.config.ts`, `packages/database/prisma/schema.prisma`, `@prisma/adapter-pg`, `pg`)
-- [x] Created `@enterprise-ai/shared` and `@enterprise-ai/database` workspace packages with `checkDatabaseHealth()`
-- [x] Created Fastify v5 API (`apps/api`) with Zod environment validation (`loadEnv`), Pino structured logging, graceful shutdown, `GET /health`, and `GET /ready` (also under `/api/v1`)
-- [x] Verified live API `/health` (`200 ok`), `/api/v1/ready` (`200 ready`, `pgvectorEnabled: true`, Redis `up`), and MinIO `/minio/health/live` (`200`)
-- [x] Configured ESLint v9 flat config (`eslint.config.mjs`) and Vitest (`vitest.config.ts`)
-- [x] Created `.env.example`, `.gitignore`, `README.md`, and session continuity documentation
+### Sprint 1 — Foundation
+- [x] Git repository initialized (`main`), `pnpm` monorepo configured, strict TypeScript, ESLint, Vitest, Docker Compose (`pgvector`, Redis, MinIO), Prisma 7, Fastify v5 `/health` & `/ready`.
 
-## Pending Tasks (Next: Sprint 2 — Backend Core)
+### Sprint 2 — Backend Core
+- [x] Created relational Prisma models and migration `20261118131305_sprint2_backend_core` (`User`, `Organization`, `Membership`, `RefreshToken`, `OrganizationInvitation`, `MembershipRole`, `InvitationStatus`)
+- [x] Provisioned isolated `enterprise_knowledge_ai_test` PostgreSQL database with `pgvector` and deployed migrations
+- [x] Implemented `scrypt` password hashing with random 16-byte salts and constant-time comparison (`apps/api/src/shared/security/password.ts`)
+- [x] Implemented JWT access tokens (`jose`, HS256) and SHA-256 hashed refresh tokens with rotation & reuse-detection family revocation (`apps/api/src/shared/security/tokens.ts`, `apps/api/src/modules/auth/`)
+- [x] Implemented auth endpoints (`/api/v1/auth/register`, `/login`, `/refresh`, `/logout`, `/me`) and `createAuthenticateHook` middleware
+- [x] Implemented tenant-aware `OrganizationsRepository`, `OrganizationsService`, RBAC hierarchy (`OWNER > ADMIN > MEMBER`), invitation acceptance flow, and last-owner protection (`apps/api/src/modules/organizations/`)
+- [x] Added unit tests and real PostgreSQL integration tests verifying auth, multi-organization membership, RBAC, and cross-tenant isolation (`apps/api/tests/security.test.ts`, `apps/api/tests/backend-core.integration.test.ts`)
 
-- [ ] Design and migrate core relational models (Users, Organizations, Memberships, Sessions/RefreshTokens)
-- [ ] Implement password hashing and authentication (`register`, `login`, `refresh`, `logout`, `me`)
-- [ ] Implement organizations, memberships, and RBAC (`OWNER`, `ADMIN`, `MEMBER`)
-- [ ] Implement authenticated request context and tenant-aware repositories
-- [ ] Add cross-tenant isolation integration tests
+## Pending Tasks (Next: Sprint 3 — Document Processing)
+
+- [ ] Add `Document`, `DocumentChunk`, and `ProcessingJob` Prisma models & migrations
+- [ ] Integrate MinIO S3-compatible object storage client (`@aws-sdk/client-s3`)
+- [ ] Implement document upload (`POST /api/v1/documents`), listing, status, deletion, and reprocessing endpoints
+- [ ] Scaffold `apps/worker` with BullMQ consumer, PDF text extraction, page-aware chunking, retries, and idempotency
 
 ## Known Problems / Environment Gaps
 
-- None blocking Sprint 1. Note: the user's Docker Desktop executable lives in `%LOCALAPPDATA%\Programs\DockerDesktop\resources\bin`; if a terminal session predates installation, refresh `PATH` or open a new terminal.
+- None blocking Sprint 2. Integration tests connecting to `localhost:5432` require Docker PostgreSQL running and network access (outside the restricted sandbox on Windows).
 
 ## Current Architecture
 
-- `apps/api`: Fastify v5 HTTP server exposing `/health`, `/ready`, `/api/v1/health`, and `/api/v1/ready`.
-- `packages/database`: Prisma 7 client factory (`createDatabaseClient`) and PostgreSQL + `pgvector` health check (`checkDatabaseHealth`).
-- `packages/shared`: Shared constants (`API_PREFIX`, `APP_NAME`) and health/readiness response contracts.
+- `apps/api`: Fastify v5 REST API with `/health`, `/ready`, `/api/v1/auth/*`, and `/api/v1/organizations/*`.
+- `packages/database`: Prisma 7 schema, migrations, `createDatabaseClient`, and `checkDatabaseHealth`.
+- `packages/shared`: Shared constants and health/readiness types.
 
 ## Next Recommended Action
 
-1. Review and optionally commit the Sprint 1 foundation changes to Git.
-2. Begin **Sprint 2 — Backend Core**: create the initial Prisma schema & migration for `Users`, `Organizations`, `Memberships`, and `RefreshTokens`, then implement auth and tenant-scoped organization modules.
+1. Review and commit Sprint 2 changes to Git when ready.
+2. Begin **Sprint 3 — Document Processing**: add `Document`, `DocumentChunk`, and `ProcessingJob` database models, MinIO storage integration, document endpoints, and the `apps/worker` BullMQ ingestion pipeline.
