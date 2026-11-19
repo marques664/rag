@@ -11,8 +11,10 @@ export {
 } from './constants/documents.js';
 export {
   DEFAULT_RETRIEVAL_TOP_K,
+  DEFAULT_RRF_K,
   EMBEDDING_DIMENSIONS,
   MAX_RETRIEVAL_TOP_K,
+  RETRIEVAL_STRATEGIES,
 } from './constants/rag.js';
 export { DOCUMENT_STATUS, PROCESSING_JOB_STATUS } from './types/documents.js';
 export type {
@@ -21,6 +23,17 @@ export type {
   DocumentStatus,
   ProcessingJobStatus,
 } from './types/documents.js';
+export type {
+  AnalyticsOverview,
+  FeedbackRatingValue,
+  MessageFeedbackDto,
+  PerformanceAnalytics,
+  PerformanceByOperationEntry,
+  QualityAnalytics,
+  UsageAnalytics,
+  UsageByModelEntry,
+  UsageDailyEntry,
+} from './types/analytics.js';
 export type {
   DatabaseCheckResult,
   DependencyCheckResult,
@@ -31,8 +44,27 @@ export type {
 export type {
   Citation,
   RAGResponse,
+  RetrievalMatchSource,
   RetrievalService,
+  RetrievalStrategy,
   RetrieveChunksInput,
   RetrievedChunk,
   UsageInformation,
 } from './types/rag.js';
+export {
+  ActiveSpan,
+  createChildTraceContext,
+  createRootTraceContext,
+  formatTraceparent,
+  generateSpanId,
+  generateTraceId,
+  parseTraceparent,
+  TelemetryTracer,
+} from './telemetry/tracing.js';
+export type {
+  RecordedSpan,
+  SpanAttributeMap,
+  SpanExporter,
+  SpanStatusCode,
+  TraceContext,
+} from './telemetry/tracing.js';

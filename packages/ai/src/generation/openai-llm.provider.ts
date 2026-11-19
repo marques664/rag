@@ -42,22 +42,23 @@ const openAIChatResponseSchema = z.object({
     .optional(),
 });
 
-const PROVIDER_NAME = 'openai';
+const DEFAULT_PROVIDER_NAME = 'openai';
 
 /**
- * OpenAI chat completions LLM provider with grounded system prompt support,
+ * OpenAI-compatible chat completions LLM provider with grounded system prompt support,
  * optional JSON object response mode, usage extraction, and latency measurement.
  */
 export class OpenAILLMProvider implements LLMProvider {
-  public readonly providerName = PROVIDER_NAME;
+  public readonly providerName: string;
   public readonly model: string;
   private readonly client: OpenAIHttpClient;
 
   constructor(options: OpenAILLMProviderOptions) {
+    this.providerName = options.providerName ?? DEFAULT_PROVIDER_NAME;
     const model = (options.model ?? DEFAULT_OPENAI_CHAT_MODEL).trim();
     if (!model) {
       throw new AIInvalidRequestError(
-        PROVIDER_NAME,
+        this.providerName,
         'LLM model name must be non-empty',
       );
     }
@@ -74,14 +75,14 @@ export class OpenAILLMProvider implements LLMProvider {
       request.systemPrompt.trim().length === 0
     ) {
       throw new AIInvalidRequestError(
-        PROVIDER_NAME,
+        this.providerName,
         'systemPrompt must be non-empty',
       );
     }
 
     if (!Array.isArray(request.messages) || request.messages.length === 0) {
       throw new AIInvalidRequestError(
-        PROVIDER_NAME,
+        this.providerName,
         'messages must contain at least one message',
       );
     }
@@ -90,7 +91,7 @@ export class OpenAILLMProvider implements LLMProvider {
       const msg = request.messages[i];
       if (!msg || msg.content.trim().length === 0) {
         throw new AIInvalidRequestError(
-          PROVIDER_NAME,
+          this.providerName,
           `Message at index ${i} must have non-empty content`,
         );
       }
@@ -127,8 +128,8 @@ export class OpenAILLMProvider implements LLMProvider {
     const content = firstChoice?.message?.content;
     if (typeof content !== 'string' || content.trim().length === 0) {
       throw new AIInvalidResponseError(
-        PROVIDER_NAME,
-        'OpenAI returned an empty completion message',
+        this.providerName,
+        `${this.providerName} returned an empty completion message`,
       );
     }
 

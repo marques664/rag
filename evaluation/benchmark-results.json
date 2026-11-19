@@ -1,0 +1,212 @@
+{
+  "generatedAt": "2026-11-19T17:57:38.115Z",
+  "topK": 3,
+  "datasetVersion": "1.0.0",
+  "caseCount": 7,
+  "summaries": [
+    {
+      "strategy": "lexical",
+      "topK": 3,
+      "caseCount": 7,
+      "meanPrecisionAtK": 0.7381,
+      "meanRecallAtK": 1,
+      "meanReciprocalRank": 0.7857,
+      "hitRateAtK": 1,
+      "avgLatencyMs": 5.73,
+      "cases": [
+        {
+          "caseId": "pt-shirt-natural-question",
+          "precisionAtK": 0.6667,
+          "recallAtK": 1,
+          "reciprocalRank": 1,
+          "hitAtK": true,
+          "latencyMs": 12.25
+        },
+        {
+          "caseId": "pt-shirt-plural-inflection",
+          "precisionAtK": 1,
+          "recallAtK": 1,
+          "reciprocalRank": 1,
+          "hitAtK": true,
+          "latencyMs": 8.41
+        },
+        {
+          "caseId": "pt-belt-material",
+          "precisionAtK": 0.5,
+          "recallAtK": 1,
+          "reciprocalRank": 0.5,
+          "hitAtK": true,
+          "latencyMs": 3.66
+        },
+        {
+          "caseId": "pt-weigh-in-duration",
+          "precisionAtK": 1,
+          "recallAtK": 1,
+          "reciprocalRank": 1,
+          "hitAtK": true,
+          "latencyMs": 3.84
+        },
+        {
+          "caseId": "en-exact-code-lookup",
+          "precisionAtK": 1,
+          "recallAtK": 1,
+          "reciprocalRank": 1,
+          "hitAtK": true,
+          "latencyMs": 3.02
+        },
+        {
+          "caseId": "en-rls-policy-lookup",
+          "precisionAtK": 1,
+          "recallAtK": 1,
+          "reciprocalRank": 1,
+          "hitAtK": true,
+          "latencyMs": 3.56
+        },
+        {
+          "caseId": "negative-unanswerable",
+          "precisionAtK": 0,
+          "recallAtK": 1,
+          "reciprocalRank": 0,
+          "hitAtK": true,
+          "latencyMs": 5.34
+        }
+      ]
+    },
+    {
+      "strategy": "semantic",
+      "topK": 3,
+      "caseCount": 7,
+      "meanPrecisionAtK": 0.8571,
+      "meanRecallAtK": 1,
+      "meanReciprocalRank": 0.8571,
+      "hitRateAtK": 1,
+      "avgLatencyMs": 2.11,
+      "cases": [
+        {
+          "caseId": "pt-shirt-natural-question",
+          "precisionAtK": 1,
+          "recallAtK": 1,
+          "reciprocalRank": 1,
+          "hitAtK": true,
+          "latencyMs": 2.5
+        },
+        {
+          "caseId": "pt-shirt-plural-inflection",
+          "precisionAtK": 1,
+          "recallAtK": 1,
+          "reciprocalRank": 1,
+          "hitAtK": true,
+          "latencyMs": 1.66
+        },
+        {
+          "caseId": "pt-belt-material",
+          "precisionAtK": 1,
+          "recallAtK": 1,
+          "reciprocalRank": 1,
+          "hitAtK": true,
+          "latencyMs": 1.8
+        },
+        {
+          "caseId": "pt-weigh-in-duration",
+          "precisionAtK": 1,
+          "recallAtK": 1,
+          "reciprocalRank": 1,
+          "hitAtK": true,
+          "latencyMs": 1.77
+        },
+        {
+          "caseId": "en-exact-code-lookup",
+          "precisionAtK": 1,
+          "recallAtK": 1,
+          "reciprocalRank": 1,
+          "hitAtK": true,
+          "latencyMs": 1.82
+        },
+        {
+          "caseId": "en-rls-policy-lookup",
+          "precisionAtK": 1,
+          "recallAtK": 1,
+          "reciprocalRank": 1,
+          "hitAtK": true,
+          "latencyMs": 3.06
+        },
+        {
+          "caseId": "negative-unanswerable",
+          "precisionAtK": 0,
+          "recallAtK": 1,
+          "reciprocalRank": 0,
+          "hitAtK": true,
+          "latencyMs": 2.13
+        }
+      ]
+    },
+    {
+      "strategy": "hybrid",
+      "topK": 3,
+      "caseCount": 7,
+      "meanPrecisionAtK": 0.7381,
+      "meanRecallAtK": 1,
+      "meanReciprocalRank": 0.8571,
+      "hitRateAtK": 1,
+      "avgLatencyMs": 7.92,
+      "cases": [
+        {
+          "caseId": "pt-shirt-natural-question",
+          "precisionAtK": 0.6667,
+          "recallAtK": 1,
+          "reciprocalRank": 1,
+          "hitAtK": true,
+          "latencyMs": 21.62
+        },
+        {
+          "caseId": "pt-shirt-plural-inflection",
+          "precisionAtK": 1,
+          "recallAtK": 1,
+          "reciprocalRank": 1,
+          "hitAtK": true,
+          "latencyMs": 13.22
+        },
+        {
+          "caseId": "pt-belt-material",
+          "precisionAtK": 0.5,
+          "recallAtK": 1,
+          "reciprocalRank": 1,
+          "hitAtK": true,
+          "latencyMs": 5.04
+        },
+        {
+          "caseId": "pt-weigh-in-duration",
+          "precisionAtK": 1,
+          "recallAtK": 1,
+          "reciprocalRank": 1,
+          "hitAtK": true,
+          "latencyMs": 2.62
+        },
+        {
+          "caseId": "en-exact-code-lookup",
+          "precisionAtK": 1,
+          "recallAtK": 1,
+          "reciprocalRank": 1,
+          "hitAtK": true,
+          "latencyMs": 6.49
+        },
+        {
+          "caseId": "en-rls-policy-lookup",
+          "precisionAtK": 1,
+          "recallAtK": 1,
+          "reciprocalRank": 1,
+          "hitAtK": true,
+          "latencyMs": 2.93
+        },
+        {
+          "caseId": "negative-unanswerable",
+          "precisionAtK": 0,
+          "recallAtK": 1,
+          "reciprocalRank": 0,
+          "hitAtK": true,
+          "latencyMs": 3.49
+        }
+      ]
+    }
+  ]
+}

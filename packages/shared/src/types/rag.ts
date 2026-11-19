@@ -1,8 +1,13 @@
 import type { DocumentChunkMetadata } from './documents.js';
 
+export type RetrievalStrategy = 'semantic' | 'lexical' | 'hybrid';
+export type RetrievalMatchSource = 'semantic' | 'lexical';
+
 export interface RetrieveChunksInput {
   organizationId: string;
-  queryEmbedding: number[];
+  queryEmbedding?: number[];
+  queryText?: string;
+  strategy?: RetrievalStrategy;
   topK?: number;
   minSimilarity?: number;
   documentIds?: string[];
@@ -19,6 +24,10 @@ export interface RetrievedChunk {
   metadata: DocumentChunkMetadata;
   distance: number;
   similarity: number;
+  matchedBy?: RetrievalMatchSource[];
+  semanticRank?: number;
+  lexicalRank?: number;
+  rrfScore?: number;
 }
 
 export interface RetrievalService {

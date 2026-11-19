@@ -7,11 +7,14 @@ import {
   assertValidVector,
   DocumentStatus,
   insertDocumentChunksWithEmbeddings,
+  Prisma,
   ProcessingJobStatus,
   type DatabaseClient,
 } from '@enterprise-ai/database';
 import {
+  createRootTraceContext,
   EMBEDDING_DIMENSIONS,
+  TelemetryTracer,
   type DocumentProcessJobPayload,
 } from '@enterprise-ai/shared';
 import { UnrecoverableError } from 'bullmq';
@@ -34,8 +37,10 @@ const jobPayloadSchema = z.object({
   processingJobId: z.string().uuid(),
   storageKey: z.string().min(1),
   processingVersion: z.number().int().positive(),
+  traceparent: z.string().min(1).optional(),
 });
 
+const CHUNK_INSERT_BATCH_SIZE = 500;
 const MAX_ERROR_LENGTH = 1000;
 
 export interface DocumentProcessorDeps {
@@ -43,9 +48,10 @@ export interface DocumentProcessorDeps {
   storage: DocumentStorageClient;
   extractor: PdfTextExtractor;
   chunker: DocumentChunker;
-  embeddingProvider: EmbeddingProvider;
+  embeddingProvider?: EmbeddingProvider;
   logger: WorkerLogger;
   maxAttempts: number;
+  tracer?: TelemetryTracer;
 }
 
 export interface JobAttemptContext {
@@ -93,6 +99,7 @@ export async function processDocumentJob(
 
   const payload = parsedPayload.data;
   const currentAttempt = attemptContext.attemptsMade + 1;
+  const traceContext = createRootTraceContext(payload.traceparent);
   const log = deps.logger.child({
     documentId: payload.documentId,
     organizationId: payload.organizationId,
@@ -100,7 +107,53 @@ export async function processDocumentJob(
     processingVersion: payload.processingVersion,
     attempt: currentAttempt,
     bullmqJobId: attemptContext.bullmqJobId,
+    traceId: traceContext.traceId,
   });
+
+  const jobSpan = deps.tracer?.startSpan('worker.document_process', traceContext, {
+    'document.id': payload.documentId,
+    'tenant.id': payload.organizationId,
+    'processing.job_id': payload.processingJobId,
+    'processing.version': payload.processingVersion,
+    'processing.attempt': currentAttempt,
+  });
+
+  try {
+    const outcome = await processDocumentJobInternal(
+      payload,
+      attemptContext,
+      currentAttempt,
+      log,
+      deps,
+      jobSpan?.context ?? traceContext,
+    );
+    jobSpan?.setAttributes({
+      'worker.outcome': outcome.status,
+      ...(outcome.status === 'completed'
+        ? {
+            'document.chunk_count': outcome.chunkCount,
+            'document.page_count': outcome.pageCount,
+          }
+        : { 'worker.skip_reason': outcome.reason }),
+    });
+    jobSpan?.setStatus('OK');
+    return outcome;
+  } catch (error) {
+    jobSpan?.recordException(error);
+    throw error;
+  } finally {
+    jobSpan?.end();
+  }
+}
+
+async function processDocumentJobInternal(
+  payload: z.infer<typeof jobPayloadSchema>,
+  attemptContext: JobAttemptContext,
+  currentAttempt: number,
+  log: WorkerLogger,
+  deps: DocumentProcessorDeps,
+  parentTraceContext: ReturnType<typeof createRootTraceContext>,
+): Promise<ProcessJobOutcome> {
 
   const [document, processingJob] = await Promise.all([
     deps.database.document.findUnique({
@@ -180,7 +233,14 @@ export async function processDocumentJob(
     log.info({ storageKey: payload.storageKey }, 'Downloading PDF from storage');
     let pdfBytes: Uint8Array;
     try {
-      pdfBytes = await deps.storage.getObjectBytes(payload.storageKey);
+      pdfBytes = deps.tracer
+        ? await deps.tracer.withSpan(
+            'worker.download_pdf',
+            parentTraceContext,
+            { 'storage.key': payload.storageKey },
+            () => deps.storage.getObjectBytes(payload.storageKey),
+          )
+        : await deps.storage.getObjectBytes(payload.storageKey);
     } catch (error) {
       if (error instanceof StorageObjectNotFoundError) {
         throw new UnrecoverableError(error.message);
@@ -203,7 +263,14 @@ export async function processDocumentJob(
 
     let extracted;
     try {
-      extracted = await deps.extractor.extract(pdfBytes);
+      extracted = deps.tracer
+        ? await deps.tracer.withSpan(
+            'worker.extract_pdf',
+            parentTraceContext,
+            { 'pdf.bytes': pdfBytes.byteLength },
+            () => deps.extractor.extract(pdfBytes),
+          )
+        : await deps.extractor.extract(pdfBytes);
     } catch (error) {
       if (error instanceof PdfExtractionError && !error.retryable) {
         throw new UnrecoverableError(error.message);
@@ -222,63 +289,83 @@ export async function processDocumentJob(
       throw new UnrecoverableError('PDF text extraction produced zero chunks');
     }
 
-    // Re-check processingVersion before incurring external embedding API calls.
-    const preEmbedDoc = await deps.database.document.findUnique({
-      where: { id: payload.documentId },
-      select: { processingVersion: true },
-    });
-    if (!preEmbedDoc) {
-      log.info('Document deleted before embedding generation; skipping cleanly');
-      return { status: 'skipped', reason: 'missing_document' };
-    }
-    if (preEmbedDoc.processingVersion !== payload.processingVersion) {
-      log.info(
-        { currentVersion: preEmbedDoc.processingVersion },
-        'Document processingVersion superseded before embedding generation; skipping stale job',
-      );
-      return { status: 'skipped', reason: 'stale_version' };
-    }
+    let embeddingResult:
+      | Awaited<ReturnType<EmbeddingProvider['embedDocuments']>>
+      | undefined;
 
-    if (deps.embeddingProvider.dimensions !== EMBEDDING_DIMENSIONS) {
-      throw new UnrecoverableError(
-        `Embedding provider dimension mismatch: expected ${EMBEDDING_DIMENSIONS}, got ${deps.embeddingProvider.dimensions}`,
-      );
-    }
-
-    // Generate embeddings outside the DB transaction so FOR UPDATE locks are never held across HTTP calls.
-    let embeddingResult;
-    try {
-      embeddingResult = await deps.embeddingProvider.embedDocuments(
-        chunks.map((chunk) => chunk.content),
-      );
-    } catch (error) {
-      if (error instanceof AIProviderError && !error.retryable) {
-        throw new UnrecoverableError(error.message);
+    if (deps.embeddingProvider) {
+      // Re-check processingVersion before incurring external embedding API calls.
+      const preEmbedDoc = await deps.database.document.findUnique({
+        where: { id: payload.documentId },
+        select: { processingVersion: true },
+      });
+      if (!preEmbedDoc) {
+        log.info('Document deleted before embedding generation; skipping cleanly');
+        return { status: 'skipped', reason: 'missing_document' };
       }
-      throw error;
-    }
+      if (preEmbedDoc.processingVersion !== payload.processingVersion) {
+        log.info(
+          { currentVersion: preEmbedDoc.processingVersion },
+          'Document processingVersion superseded before embedding generation; skipping stale job',
+        );
+        return { status: 'skipped', reason: 'stale_version' };
+      }
 
-    if (embeddingResult.embeddings.length !== chunks.length) {
-      throw new UnrecoverableError(
-        `Embedding count mismatch: expected ${chunks.length}, received ${embeddingResult.embeddings.length}`,
-      );
-    }
-
-    for (let i = 0; i < embeddingResult.embeddings.length; i += 1) {
-      const vector = embeddingResult.embeddings[i];
-      if (!vector) {
+      if (deps.embeddingProvider.dimensions !== EMBEDDING_DIMENSIONS) {
         throw new UnrecoverableError(
-          `Missing embedding vector for chunk index ${i}`,
+          `Embedding provider dimension mismatch: expected ${EMBEDDING_DIMENSIONS}, got ${deps.embeddingProvider.dimensions}`,
         );
       }
+
+      // Generate embeddings outside the DB transaction so FOR UPDATE locks are never held across HTTP calls.
+      const embeddingProvider = deps.embeddingProvider;
       try {
-        assertValidVector(vector, EMBEDDING_DIMENSIONS);
+        embeddingResult = deps.tracer
+          ? await deps.tracer.withSpan(
+              'worker.embed_chunks',
+              parentTraceContext,
+              {
+                'ai.provider': embeddingProvider.providerName,
+                'ai.model': embeddingProvider.model,
+                'document.chunk_count': chunks.length,
+              },
+              () =>
+                embeddingProvider.embedDocuments(
+                  chunks.map((chunk) => chunk.content),
+                ),
+            )
+          : await embeddingProvider.embedDocuments(
+              chunks.map((chunk) => chunk.content),
+            );
       } catch (error) {
+        if (error instanceof AIProviderError && !error.retryable) {
+          throw new UnrecoverableError(error.message);
+        }
+        throw error;
+      }
+
+      if (embeddingResult.embeddings.length !== chunks.length) {
         throw new UnrecoverableError(
-          error instanceof Error
-            ? error.message
-            : `Invalid embedding vector at chunk index ${i}`,
+          `Embedding count mismatch: expected ${chunks.length}, received ${embeddingResult.embeddings.length}`,
         );
+      }
+
+      for (let i = 0; i < embeddingResult.embeddings.length; i += 1) {
+        const vector = embeddingResult.embeddings[i];
+        if (!vector) {
+          throw new UnrecoverableError(
+            `Missing embedding vector for chunk index ${i}`,
+          );
+        }
+        try {
+          assertValidVector(vector, EMBEDDING_DIMENSIONS);
+        } catch (error) {
+          throw new UnrecoverableError(
+            error instanceof Error
+              ? error.message
+              : `Invalid embedding vector at chunk index ${i}`,
+          );
+        }
       }
     }
 
@@ -305,19 +392,36 @@ export async function processDocumentJob(
         where: { documentId: payload.documentId },
       });
 
-      await insertDocumentChunksWithEmbeddings(
-        tx,
-        chunks.map((chunk, index) => ({
-          documentId: payload.documentId,
-          organizationId: document.organizationId,
-          content: chunk.content,
-          embedding: embeddingResult.embeddings[index]!,
-          pageNumber: chunk.pageNumber,
-          chunkIndex: chunk.chunkIndex,
-          tokenCount: chunk.tokenCount,
-          metadata: chunk.metadata,
-        })),
-      );
+      if (embeddingResult) {
+        await insertDocumentChunksWithEmbeddings(
+          tx,
+          chunks.map((chunk, index) => ({
+            documentId: payload.documentId,
+            organizationId: document.organizationId,
+            content: chunk.content,
+            embedding: embeddingResult.embeddings[index]!,
+            pageNumber: chunk.pageNumber,
+            chunkIndex: chunk.chunkIndex,
+            tokenCount: chunk.tokenCount,
+            metadata: chunk.metadata,
+          })),
+        );
+      } else {
+        for (let i = 0; i < chunks.length; i += CHUNK_INSERT_BATCH_SIZE) {
+          const batch = chunks.slice(i, i + CHUNK_INSERT_BATCH_SIZE);
+          await tx.documentChunk.createMany({
+            data: batch.map((chunk) => ({
+              documentId: payload.documentId,
+              organizationId: document.organizationId,
+              content: chunk.content,
+              pageNumber: chunk.pageNumber,
+              chunkIndex: chunk.chunkIndex,
+              tokenCount: chunk.tokenCount,
+              metadata: chunk.metadata as Prisma.InputJsonValue,
+            })),
+          });
+        }
+      }
 
       const completedAt = new Date();
       await tx.document.update({
@@ -355,8 +459,13 @@ export async function processDocumentJob(
       {
         chunkCount: chunks.length,
         pageCount: extracted.totalPages,
-        embeddingModel: embeddingResult.model,
-        embeddingLatencyMs: embeddingResult.latencyMs,
+        embeddingMode: embeddingResult ? 'vector' : 'lexical_only',
+        ...(embeddingResult
+          ? {
+              embeddingModel: embeddingResult.model,
+              embeddingLatencyMs: embeddingResult.latencyMs,
+            }
+          : {}),
       },
       'Document processing completed',
     );

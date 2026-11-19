@@ -1,9 +1,16 @@
-import type { EmbeddingProvider, LLMProvider } from '@enterprise-ai/ai';
+import type {
+  EmbeddingProvider,
+  LLMProvider,
+  RerankerService,
+} from '@enterprise-ai/ai';
 import type {
   Citation,
   RAGResponse,
   RetrievalService,
+  RetrievalStrategy,
   RetrievedChunk,
+  TelemetryTracer,
+  TraceContext,
   UsageInformation,
 } from '@enterprise-ai/shared';
 
@@ -11,9 +18,29 @@ export type {
   Citation,
   RAGResponse,
   RetrievalService,
+  RetrievalStrategy,
   RetrievedChunk,
   UsageInformation,
 };
+
+export interface RagStageLatencies {
+  embeddingMs: number;
+  retrievalMs: number;
+  rerankMs: number;
+  generationMs: number;
+}
+
+export type RagUsageInformation = UsageInformation & {
+  stageLatencies?: RagStageLatencies;
+};
+
+export interface DetailedRAGResponse extends Omit<RAGResponse, 'usage'> {
+  usage: RagUsageInformation | null;
+}
+
+export interface RagServiceLogger {
+  info(context: Record<string, unknown>, message: string): void;
+}
 
 export interface ContextAssemblyOptions {
   maxContextChars?: number;
@@ -42,10 +69,12 @@ export interface ContextAssemblyService {
 export interface AnswerQuestionInput {
   organizationId: string;
   question: string;
+  strategy?: RetrievalStrategy;
   topK?: number;
   minSimilarity?: number;
   documentIds?: string[];
   signal?: AbortSignal;
+  traceContext?: TraceContext | null;
 }
 
 export interface StructuredLLMOutput {
@@ -55,10 +84,14 @@ export interface StructuredLLMOutput {
 }
 
 export interface RagServiceDependencies {
-  embeddingProvider: EmbeddingProvider;
+  embeddingProvider?: EmbeddingProvider;
   retrievalService: RetrievalService;
   llmProvider: LLMProvider;
+  reranker?: RerankerService;
   contextAssemblyService?: ContextAssemblyService;
+  defaultStrategy?: RetrievalStrategy;
   defaultTopK?: number;
   maxContextChars?: number;
+  logger?: RagServiceLogger;
+  tracer?: TelemetryTracer;
 }

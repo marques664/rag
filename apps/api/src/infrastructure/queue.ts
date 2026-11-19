@@ -15,6 +15,10 @@ export interface DocumentQueueService {
   close(): Promise<void>;
 }
 
+export interface DocumentQueueOptions {
+  queueName?: string;
+}
+
 /**
  * BullMQ queue producer for asynchronous document processing jobs.
  */
@@ -26,7 +30,12 @@ export class BullMqDocumentQueue implements DocumentQueueService {
     typeof DOCUMENT_PROCESS_JOB_NAME
   >;
 
-  constructor(redisUrl: string) {
+  constructor(redisUrl: string, options?: string | DocumentQueueOptions) {
+    const queueName =
+      typeof options === 'string'
+        ? options
+        : (options?.queueName ?? DOCUMENT_PROCESSING_QUEUE_NAME);
+
     this.connection = new Redis(redisUrl, {
       maxRetriesPerRequest: null,
       enableReadyCheck: true,
@@ -37,7 +46,7 @@ export class BullMqDocumentQueue implements DocumentQueueService {
       DocumentProcessJobPayload,
       void,
       typeof DOCUMENT_PROCESS_JOB_NAME
-    >(DOCUMENT_PROCESSING_QUEUE_NAME, {
+    >(queueName, {
       connection: this.connection,
       defaultJobOptions: {
         attempts: DEFAULT_JOB_ATTEMPTS,

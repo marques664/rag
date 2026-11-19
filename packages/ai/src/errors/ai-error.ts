@@ -19,6 +19,8 @@ export interface AIProviderErrorOptions {
 
 const SENSITIVE_TOKEN_PATTERNS = [
   /sk-[a-zA-Z0-9_-]{8,}/g,
+  /gsk_[a-zA-Z0-9_-]{8,}/g,
+  /AIza[0-9A-Za-z_-]{20,}/g,
   /Bearer\s+[A-Za-z0-9._-]+/gi,
 ];
 

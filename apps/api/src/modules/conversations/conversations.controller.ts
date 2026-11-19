@@ -1,3 +1,4 @@
+import type { RetrievalStrategy } from '@enterprise-ai/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   ForbiddenError,
@@ -100,7 +101,7 @@ export class ConversationsController {
   sendMessage = async (
     request: FastifyRequest<{
       Params: { id: string };
-      Body: { content: string; topK?: number };
+      Body: { content: string; topK?: number; strategy?: RetrievalStrategy };
     }>,
     reply: FastifyReply,
   ) => {
@@ -111,6 +112,8 @@ export class ConversationsController {
       userId: context.userId,
       content: request.body.content,
       topK: request.body.topK,
+      strategy: request.body.strategy,
+      traceContext: request.traceContext,
     });
     return reply.code(201).send(result);
   };

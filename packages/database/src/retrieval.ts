@@ -97,6 +97,10 @@ export class PgVectorRetrievalService implements RetrievalService {
   public async retrieve(input: RetrieveChunksInput): Promise<RetrievedChunk[]> {
     assertUuid(input.organizationId, 'organizationId');
 
+    if (!input.queryEmbedding) {
+      throw new Error('queryEmbedding is required for semantic retrieval');
+    }
+
     const topK = validateTopK(input.topK ?? this.defaultTopK, 'topK');
 
     const vectorLiteral = formatPgVectorLiteral(

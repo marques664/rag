@@ -2,12 +2,15 @@ import path from 'node:path';
 import {
   createEmbeddingProvider,
   createLLMProvider,
+  hasEmbeddingCredentials,
+  hasLLMCredentials,
+  HybridLexicalReranker,
   loadAIConfig,
 } from '@enterprise-ai/ai';
 import {
   checkDatabaseHealth,
   createDatabaseClient,
-  PgVectorRetrievalService,
+  HybridRetrievalService,
 } from '@enterprise-ai/database';
 import { config as loadDotenv } from 'dotenv';
 import { buildApp } from './app.js';
@@ -33,14 +36,20 @@ async function startServer(): Promise<void> {
   });
   const documentQueue = new BullMqDocumentQueue(env.REDIS_URL);
   const aiConfig = loadAIConfig();
-  const retrievalService = new PgVectorRetrievalService(database, {
+  const hasLlmCredentials = hasLLMCredentials(aiConfig);
+  const hasEmbedCredentials = hasEmbeddingCredentials(aiConfig);
+  const retrievalStrategy = hasEmbedCredentials
+    ? env.RAG_RETRIEVAL_STRATEGY
+    : 'lexical';
+  const retrievalService = new HybridRetrievalService(database, {
+    defaultStrategy: retrievalStrategy,
     defaultTopK: env.RAG_DEFAULT_TOP_K,
   });
-  const hasAiCredentials = Boolean(aiConfig.openai.apiKey);
-  const embeddingProvider = hasAiCredentials
+  const reranker = new HybridLexicalReranker();
+  const embeddingProvider = hasEmbedCredentials
     ? createEmbeddingProvider(aiConfig)
     : undefined;
-  const llmProvider = hasAiCredentials
+  const llmProvider = hasLlmCredentials
     ? createLLMProvider(aiConfig)
     : undefined;
 
@@ -59,15 +68,27 @@ async function startServer(): Promise<void> {
     retrievalService,
     embeddingProvider,
     llmProvider,
+    reranker,
+    ragRetrievalStrategy: retrievalStrategy,
     ragDefaultTopK: env.RAG_DEFAULT_TOP_K,
     ragMaxContextChars: env.RAG_MAX_CONTEXT_CHARS,
+    corsOrigin: env.CORS_ORIGIN,
+    rateLimitMax: env.RATE_LIMIT_MAX,
+    rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
     checkDatabase: () => checkDatabaseHealth(database),
     checkRedis: () => checkRedisHealth(redis),
   });
 
-  if (!hasAiCredentials) {
+  if (!hasLlmCredentials) {
     app.log.warn(
-      'OPENAI_API_KEY is not configured; RAG message generation will return 503 AI_PROVIDER_NOT_CONFIGURED',
+      { llmProvider: aiConfig.llmProvider },
+      'LLM provider credentials are not configured; RAG message generation will return 503 AI_PROVIDER_NOT_CONFIGURED',
+    );
+  }
+  if (!hasEmbedCredentials) {
+    app.log.info(
+      { embeddingProvider: aiConfig.embeddingProvider },
+      'Vector embeddings disabled (AI_EMBEDDING_PROVIDER=none); RAG defaulting to lexical Full-Text Search with active LLM',
     );
   }
 

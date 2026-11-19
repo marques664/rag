@@ -1,4 +1,7 @@
-import { MAX_RETRIEVAL_TOP_K } from '@enterprise-ai/shared';
+import {
+  MAX_RETRIEVAL_TOP_K,
+  RETRIEVAL_STRATEGIES,
+} from '@enterprise-ai/shared';
 import { z } from 'zod';
 
 const messageRoleValues = ['USER', 'ASSISTANT'] as const;
@@ -28,6 +31,7 @@ export const listMessagesQuerySchema = z.object({
 export const sendMessageBodySchema = z.object({
   content: z.string().trim().min(1).max(4000),
   topK: z.coerce.number().int().min(1).max(MAX_RETRIEVAL_TOP_K).optional(),
+  strategy: z.enum(RETRIEVAL_STRATEGIES).optional(),
 });
 
 export const citationSchema = z.object({
@@ -46,6 +50,13 @@ export const messageTokenUsageSchema = z.object({
   totalTokens: z.number().int().nonnegative(),
 });
 
+export const ragStageLatenciesSchema = z.object({
+  embeddingMs: z.number().int().nonnegative(),
+  retrievalMs: z.number().int().nonnegative(),
+  rerankMs: z.number().int().nonnegative(),
+  generationMs: z.number().int().nonnegative(),
+});
+
 export const usageInformationSchema = z.object({
   model: z.string(),
   embeddingModel: z.string(),
@@ -55,6 +66,7 @@ export const usageInformationSchema = z.object({
   embeddingInputTokens: z.number().int().nonnegative().optional(),
   latencyMs: z.number().int().nonnegative(),
   estimatedCost: z.number().nullable(),
+  stageLatencies: ragStageLatenciesSchema.optional(),
 });
 
 export const conversationSummarySchema = z.object({

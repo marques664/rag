@@ -13,10 +13,7 @@ import {
   ProcessingJobStatus,
   type DatabaseClient,
 } from '@enterprise-ai/database';
-import {
-  DOCUMENT_PROCESS_JOB_NAME,
-  DOCUMENT_PROCESSING_QUEUE_NAME,
-} from '@enterprise-ai/shared';
+import { DOCUMENT_PROCESS_JOB_NAME } from '@enterprise-ai/shared';
 import { Queue } from 'bullmq';
 import { config as loadDotenv } from 'dotenv';
 import type { FastifyInstance } from 'fastify';
@@ -52,6 +49,7 @@ const MINIO_BUCKET =
 const TEST_JWT_SECRET =
   'integration-test-jwt-secret-key-minimum-32-characters';
 const MAX_TEST_UPLOAD_BYTES = 64 * 1024;
+const TEST_QUEUE_NAME = 'document-processing-test';
 
 function buildMinimalPdfBuffer(text = 'Enterprise Knowledge AI Test PDF'): Buffer {
   const escaped = text
@@ -137,7 +135,7 @@ describe('Sprint 3 Documents API integration (PostgreSQL + MinIO + BullMQ)', () 
       maxRetriesPerRequest: null,
       enableReadyCheck: true,
     });
-    inspectionQueue = new Queue(DOCUMENT_PROCESSING_QUEUE_NAME, {
+    inspectionQueue = new Queue(TEST_QUEUE_NAME, {
       connection: redisInspector,
     });
 
@@ -149,7 +147,9 @@ describe('Sprint 3 Documents API integration (PostgreSQL + MinIO + BullMQ)', () 
       secretAccessKey: MINIO_ROOT_PASSWORD,
       bucket: MINIO_BUCKET,
     });
-    documentQueue = new BullMqDocumentQueue(TEST_REDIS_URL);
+    documentQueue = new BullMqDocumentQueue(TEST_REDIS_URL, {
+      queueName: TEST_QUEUE_NAME,
+    });
 
     app = buildApp({
       nodeEnv: 'test',
@@ -379,13 +379,16 @@ describe('Sprint 3 Documents API integration (PostgreSQL + MinIO + BullMQ)', () 
     const bullJob = await inspectionQueue.getJob(dbJob!.id);
     expect(bullJob).not.toBeUndefined();
     expect(bullJob?.name).toBe(DOCUMENT_PROCESS_JOB_NAME);
-    expect(bullJob?.data).toEqual({
+    expect(bullJob?.data).toMatchObject({
       documentId: docId,
       organizationId: owner.orgId,
       processingJobId: dbJob!.id,
       storageKey: dbDoc!.storageKey,
       processingVersion: 1,
     });
+    expect(bullJob?.data.traceparent).toMatch(
+      /^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/,
+    );
 
     // List, detail, and status endpoints
     const listRes = await app.inject({

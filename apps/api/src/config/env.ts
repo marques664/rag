@@ -2,6 +2,7 @@ import {
   DEFAULT_RETRIEVAL_TOP_K,
   MAX_DOCUMENT_FILE_SIZE_BYTES,
   MAX_RETRIEVAL_TOP_K,
+  RETRIEVAL_STRATEGIES,
 } from '@enterprise-ai/shared';
 import { z } from 'zod';
 
@@ -46,6 +47,17 @@ const envSchema = z.object({
     .min(1000)
     .max(200_000)
     .default(24_000),
+  RAG_RETRIEVAL_STRATEGY: z
+    .enum(RETRIEVAL_STRATEGIES)
+    .default('hybrid'),
+  CORS_ORIGIN: z.string().trim().min(1).default('http://localhost:3000'),
+  RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100_000).default(120),
+  RATE_LIMIT_WINDOW_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .max(3_600_000)
+    .default(60_000),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

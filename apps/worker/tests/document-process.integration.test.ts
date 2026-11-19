@@ -16,7 +16,6 @@ import {
   DEFAULT_JOB_ATTEMPTS,
   DEFAULT_JOB_BACKOFF_MS,
   DOCUMENT_PROCESS_JOB_NAME,
-  DOCUMENT_PROCESSING_QUEUE_NAME,
   EMBEDDING_DIMENSIONS,
   type DocumentProcessJobPayload,
 } from '@enterprise-ai/shared';
@@ -42,6 +41,7 @@ import { UnpdfTextExtractor } from '../src/services/pdf-extractor.service.js';
 
 loadDotenv({ path: path.resolve(import.meta.dirname, '../../../.env') });
 
+const TEST_QUEUE_NAME = 'document-processing-test';
 const TEST_DATABASE_URL =
   process.env['TEST_DATABASE_URL'] ??
   'postgresql://postgres:postgres@localhost:5432/enterprise_knowledge_ai_test?schema=public';
@@ -220,10 +220,10 @@ describe('Sprint 3 Worker document processing integration (PostgreSQL + MinIO + 
     eventsRedis = createWorkerRedisClient(TEST_REDIS_URL);
 
     queue = new Queue<DocumentProcessJobPayload, void, typeof DOCUMENT_PROCESS_JOB_NAME>(
-      DOCUMENT_PROCESSING_QUEUE_NAME,
+      TEST_QUEUE_NAME,
       { connection: queueRedis },
     );
-    queueEvents = new QueueEvents(DOCUMENT_PROCESSING_QUEUE_NAME, {
+    queueEvents = new QueueEvents(TEST_QUEUE_NAME, {
       connection: eventsRedis,
     });
     await queueEvents.waitUntilReady();
@@ -231,6 +231,7 @@ describe('Sprint 3 Worker document processing integration (PostgreSQL + MinIO + 
     worker = createDocumentProcessingWorker({
       connection: workerRedis,
       concurrency: 1,
+      queueName: TEST_QUEUE_NAME,
       database: db,
       storage,
       extractor,

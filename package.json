@@ -11,9 +11,10 @@
   "scripts": {
     "dev": "pnpm --filter @enterprise-ai/api dev",
     "dev:worker": "pnpm --filter @enterprise-ai/worker dev",
+    "dev:web": "pnpm --filter @enterprise-ai/web dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "lint": "eslint .",
+    "lint": "eslint . && pnpm --filter @enterprise-ai/web lint",
     "test": "vitest run --configLoader native",
     "test:watch": "vitest --configLoader native",
     "db:generate": "pnpm --filter @enterprise-ai/database db:generate",

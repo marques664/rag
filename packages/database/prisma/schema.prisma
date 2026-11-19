@@ -2,6 +2,7 @@
 // Sprint 2: Core identity, organization, membership, invitation, and session models.
 // Sprint 3: Document ingestion, chunk persistence, and processing job lifecycle models.
 // Sprint 4: pgvector chunk embeddings, conversations, messages, citations, and usage events.
+// Sprint 5-7: PostgreSQL FTS support and message feedback.
 
 generator client {
   provider            = "prisma-client"
@@ -45,6 +46,11 @@ enum MessageRole {
   ASSISTANT
 }
 
+enum FeedbackRating {
+  UP
+  DOWN
+}
+
 model Organization {
   id        String   @id @default(uuid()) @db.Uuid
   name      String
@@ -76,6 +82,7 @@ model User {
   uploadedDocuments Document[]               @relation("UploadedDocuments")
   conversations     Conversation[]
   usageEvents       UsageEvent[]
+  messageFeedback   MessageFeedback[]
 
   @@map("users")
 }
@@ -234,9 +241,28 @@ model Message {
   conversation Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   citations    MessageCitation[]
   usageEvents  UsageEvent[]
+  feedback     MessageFeedback[]
 
   @@index([conversationId, createdAt])
   @@map("messages")
+}
+
+model MessageFeedback {
+  id        String         @id @default(uuid()) @db.Uuid
+  messageId String         @map("message_id") @db.Uuid
+  userId    String         @map("user_id") @db.Uuid
+  rating    FeedbackRating
+  comment   String?
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([messageId])
+  @@index([userId])
+  @@map("message_feedback")
 }
 
 model MessageCitation {

@@ -1,5 +1,10 @@
 import type { MessageRole } from '@enterprise-ai/database';
-import type { Citation, UsageInformation } from '@enterprise-ai/shared';
+import type {
+  Citation,
+  RetrievalStrategy,
+  TraceContext,
+} from '@enterprise-ai/shared';
+import type { RagUsageInformation } from '../rag/rag.types.js';
 
 export interface MessageTokenUsageDto {
   inputTokens: number;
@@ -71,6 +76,8 @@ export interface SendMessageInput {
   userId: string;
   content: string;
   topK?: number;
+  strategy?: RetrievalStrategy;
+  traceContext?: TraceContext | null;
 }
 
 export interface SendMessageResult {
@@ -78,6 +85,6 @@ export interface SendMessageResult {
   userMessage: MessageDto;
   assistantMessage: MessageDto;
   citations: Citation[];
-  usage: UsageInformation | null;
+  usage: RagUsageInformation | null;
   insufficientContext: boolean;
 }

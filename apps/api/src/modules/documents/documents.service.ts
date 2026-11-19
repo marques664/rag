@@ -78,6 +78,7 @@ export class DocumentsService {
     document: Document;
     job: ProcessingJob;
     storageKey: string;
+    traceparent?: string;
   }): Promise<void> {
     try {
       const bullmqJobId = await this.queue.enqueueDocumentProcessing({
@@ -86,6 +87,7 @@ export class DocumentsService {
         processingJobId: params.job.id,
         storageKey: params.storageKey,
         processingVersion: params.document.processingVersion,
+        ...(params.traceparent ? { traceparent: params.traceparent } : {}),
       });
 
       if (bullmqJobId) {
@@ -191,6 +193,7 @@ export class DocumentsService {
       document: created.document,
       job: created.job,
       storageKey,
+      traceparent: input.traceparent,
     });
 
     return toDocumentSummaryDto(created.document);
@@ -275,6 +278,7 @@ export class DocumentsService {
   async reprocessDocument(
     documentId: string,
     organizationId: string,
+    traceparent?: string,
   ): Promise<ReprocessDocumentResult> {
     const result = await this.repository.reprocessTransaction({
       documentId,
@@ -293,6 +297,7 @@ export class DocumentsService {
       document: result.document,
       job: result.job,
       storageKey: result.document.storageKey,
+      traceparent,
     });
 
     return {

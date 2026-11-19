@@ -1,6 +1,12 @@
 import path from 'node:path';
-import { createEmbeddingProvider, loadAIConfig } from '@enterprise-ai/ai';
+import {
+  createEmbeddingProvider,
+  hasEmbeddingCredentials,
+  loadAIConfig,
+  type EmbeddingProvider,
+} from '@enterprise-ai/ai';
 import { createDatabaseClient } from '@enterprise-ai/database';
+import { TelemetryTracer } from '@enterprise-ai/shared';
 import { config as loadDotenv } from 'dotenv';
 import { loadWorkerEnv } from './config/env.js';
 import { createWorkerLogger } from './infrastructure/logger.js';
@@ -16,11 +22,20 @@ loadDotenv();
 async function startWorker(): Promise<void> {
   const env = loadWorkerEnv();
   const aiConfig = loadAIConfig();
-  const embeddingProvider = createEmbeddingProvider(aiConfig);
   const logger = createWorkerLogger({
     nodeEnv: env.NODE_ENV,
     logLevel: env.LOG_LEVEL,
   });
+
+  let embeddingProvider: EmbeddingProvider | undefined;
+  if (hasEmbeddingCredentials(aiConfig)) {
+    embeddingProvider = createEmbeddingProvider(aiConfig);
+  } else {
+    logger.info(
+      { embeddingProvider: aiConfig.embeddingProvider },
+      'Starting document processing worker in lexical-only mode (no embedding provider active)',
+    );
+  }
 
   const database = createDatabaseClient(env.DATABASE_URL);
   const redis = createWorkerRedisClient(env.REDIS_URL);
@@ -36,6 +51,9 @@ async function startWorker(): Promise<void> {
 
   const extractor = new UnpdfTextExtractor();
   const chunker = new PageAwareTokenChunker();
+  const tracer = new TelemetryTracer('enterprise-knowledge-ai-worker', {
+    otlpEndpoint: process.env['OTEL_EXPORTER_OTLP_TRACES_ENDPOINT'],
+  });
 
   const worker = createDocumentProcessingWorker({
     connection: redis,
@@ -47,6 +65,7 @@ async function startWorker(): Promise<void> {
     embeddingProvider,
     logger,
     maxAttempts: env.WORKER_MAX_ATTEMPTS,
+    tracer,
   });
 
   logger.info(
@@ -54,9 +73,14 @@ async function startWorker(): Promise<void> {
       concurrency: env.WORKER_CONCURRENCY,
       maxAttempts: env.WORKER_MAX_ATTEMPTS,
       bucket: env.MINIO_BUCKET,
-      embeddingProvider: embeddingProvider.providerName,
-      embeddingModel: embeddingProvider.model,
-      embeddingDimensions: embeddingProvider.dimensions,
+      embeddingMode: embeddingProvider ? 'vector' : 'lexical_only',
+      ...(embeddingProvider
+        ? {
+            embeddingProvider: embeddingProvider.providerName,
+            embeddingModel: embeddingProvider.model,
+            embeddingDimensions: embeddingProvider.dimensions,
+          }
+        : {}),
     },
     'Document processing worker started',
   );

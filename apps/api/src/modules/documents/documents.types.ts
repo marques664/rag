@@ -69,6 +69,7 @@ export interface UploadDocumentInput {
   filename: string;
   mimeType: string;
   buffer: Buffer;
+  traceparent?: string;
 }
 
 export interface ReprocessDocumentResult {

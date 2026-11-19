@@ -14,6 +14,34 @@ export interface EstimateModelCostInput {
  * Unknown models return null rather than fabricating cost estimates.
  */
 const MODEL_PRICING_TABLE: Readonly<Record<string, ModelPricingPerMillionUsd>> = {
+  'llama-3.3-70b-versatile': {
+    inputUsdPerMillion: 0.59,
+    outputUsdPerMillion: 0.79,
+  },
+  'llama-3.1-8b-instant': {
+    inputUsdPerMillion: 0.05,
+    outputUsdPerMillion: 0.08,
+  },
+  'mixtral-8x7b-32768': {
+    inputUsdPerMillion: 0.24,
+    outputUsdPerMillion: 0.24,
+  },
+  'gemini-embedding-001': {
+    inputUsdPerMillion: 0.15,
+    outputUsdPerMillion: 0,
+  },
+  'gemini-2.5-flash': {
+    inputUsdPerMillion: 0.3,
+    outputUsdPerMillion: 2.5,
+  },
+  'gemini-2.5-pro': {
+    inputUsdPerMillion: 1.25,
+    outputUsdPerMillion: 10.0,
+  },
+  'gemini-2.0-flash': {
+    inputUsdPerMillion: 0.1,
+    outputUsdPerMillion: 0.4,
+  },
   'text-embedding-3-small': {
     inputUsdPerMillion: 0.02,
     outputUsdPerMillion: 0,
@@ -41,7 +69,7 @@ const MODEL_PRICING_TABLE: Readonly<Record<string, ModelPricingPerMillionUsd>> =
 };
 
 function resolveModelPricing(model: string): ModelPricingPerMillionUsd | undefined {
-  const normalized = model.trim().toLowerCase();
+  const normalized = model.trim().toLowerCase().replace(/^models\//, '');
   if (!normalized) {
     return undefined;
   }

@@ -12,6 +12,7 @@ import {
 export interface DocumentProcessingWorkerOptions extends DocumentProcessorDeps {
   connection: ConnectionOptions;
   concurrency: number;
+  queueName?: string;
 }
 
 /**
@@ -20,10 +21,15 @@ export interface DocumentProcessingWorkerOptions extends DocumentProcessorDeps {
 export function createDocumentProcessingWorker(
   options: DocumentProcessingWorkerOptions,
 ): Worker<DocumentProcessJobPayload> {
-  const { connection, concurrency, ...processorDeps } = options;
+  const {
+    connection,
+    concurrency,
+    queueName = DOCUMENT_PROCESSING_QUEUE_NAME,
+    ...processorDeps
+  } = options;
 
   const worker = new Worker<DocumentProcessJobPayload>(
-    DOCUMENT_PROCESSING_QUEUE_NAME,
+    queueName,
     async (job: Job<DocumentProcessJobPayload>) => {
       if (job.name !== DOCUMENT_PROCESS_JOB_NAME) {
         processorDeps.logger.warn(

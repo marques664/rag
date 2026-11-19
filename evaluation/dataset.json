@@ -1,0 +1,99 @@
+{
+  "version": "1.0.0",
+  "description": "Reproducible multi-domain retrieval and grounded RAG evaluation dataset (Portuguese rules + English engineering corpus + negative controls).",
+  "corpus": [
+    {
+      "key": "chunk_shirt_general",
+      "filename": "Livro Regras.pdf",
+      "pageNumber": 14,
+      "topicBasisIndex": 0,
+      "content": "3.2. CAMISETA Uma camiseta deve ser usada sob o maio de levantamento por todos os levantadores no agachamento, supino e levantamento terra. A unica excecao e a camisa de suporte em competicoes equipadas."
+    },
+    {
+      "key": "chunk_shirt_specs",
+      "filename": "Livro Regras.pdf",
+      "pageNumber": 15,
+      "topicBasisIndex": 0,
+      "content": "A camiseta deve ser fabricada inteiramente de tecido ou similar sintetico, sem material elastico de borracha, sem costuras reforcadas, bolsos, botoes ou ziperes, com gola redonda e mangas justas acima do cotovelo."
+    },
+    {
+      "key": "chunk_belt_specs",
+      "filename": "Livro Regras.pdf",
+      "pageNumber": 16,
+      "topicBasisIndex": 1,
+      "content": "3.6. CINTO Os competidores podem usar um cinto externo de couro ou vinil nao elastico com fivela de um ou dois pinos ou alavanca solta facil, sem forro acolchoado."
+    },
+    {
+      "key": "chunk_weigh_in",
+      "filename": "Livro Regras.pdf",
+      "pageNumber": 26,
+      "topicBasisIndex": 2,
+      "content": "A pesagem dos competidores comeca duas horas antes do inicio da competicao e dura noventa minutos para conferir categoria de peso e equipamento."
+    },
+    {
+      "key": "chunk_pump_maintenance",
+      "filename": "plant-safety-manual.pdf",
+      "pageNumber": 4,
+      "topicBasisIndex": 3,
+      "content": "KV-4200 turbo-compressor cavitation inspection requires lockout-tagout isolation and manifold bolt torque calibration to 45Nm prior to restart."
+    },
+    {
+      "key": "chunk_rls_architecture",
+      "filename": "security-runbook.pdf",
+      "pageNumber": 2,
+      "topicBasisIndex": 4,
+      "content": "PostgreSQL Row-Level Security isolates tenant queries using app.current_organization_id session configuration under the enterprise_ai_app database role."
+    }
+  ],
+  "cases": [
+    {
+      "id": "pt-shirt-natural-question",
+      "query": "Que tipo de camiseta devo usar em competicoes de powerlifting?",
+      "queryBasisIndex": 0,
+      "relevantKeys": ["chunk_shirt_general", "chunk_shirt_specs"],
+      "groundTruth": "Usar camiseta de tecido ou sintético sob o maiô, sem elástico ou costuras reforçadas, com gola redonda e mangas acima do cotovelo."
+    },
+    {
+      "id": "pt-shirt-plural-inflection",
+      "query": "Quais as regras para camisetas?",
+      "queryBasisIndex": 0,
+      "relevantKeys": ["chunk_shirt_general", "chunk_shirt_specs"],
+      "groundTruth": "Camiseta obrigatória sob o maiô de tecido ou sintético, sem elástico, zíperes, bolsos ou costura reforçada."
+    },
+    {
+      "id": "pt-belt-material",
+      "query": "De que material deve ser feito o cinto?",
+      "queryBasisIndex": 1,
+      "relevantKeys": ["chunk_belt_specs"],
+      "groundTruth": "Couro, vinil ou material similar não elástico, sem forro acolchoado."
+    },
+    {
+      "id": "pt-weigh-in-duration",
+      "query": "Quanto tempo antes comeca a pesagem dos atletas?",
+      "queryBasisIndex": 2,
+      "relevantKeys": ["chunk_weigh_in"],
+      "groundTruth": "Começa duas horas antes da competição e dura noventa minutos."
+    },
+    {
+      "id": "en-exact-code-lookup",
+      "query": "KV-4200 torque 45Nm",
+      "queryBasisIndex": 3,
+      "relevantKeys": ["chunk_pump_maintenance"],
+      "groundTruth": "KV-4200 turbo-compressor inspection requires lockout-tagout and 45Nm manifold bolt torque calibration."
+    },
+    {
+      "id": "en-rls-policy-lookup",
+      "query": "How does PostgreSQL Row-Level Security isolate tenants?",
+      "queryBasisIndex": 4,
+      "relevantKeys": ["chunk_rls_architecture"],
+      "groundTruth": "Using app.current_organization_id session configuration under the enterprise_ai_app database role."
+    },
+    {
+      "id": "negative-unanswerable",
+      "query": "Qual a politica de reembolso de passagens aereas internacionais?",
+      "queryBasisIndex": 99,
+      "relevantKeys": [],
+      "groundTruth": "Insufficient context (not present in the indexed documents)."
+    }
+  ]
+}

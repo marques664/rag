@@ -576,13 +576,16 @@ describe('documents HTTP endpoints (unit with injected storage/queue/db)', () =>
     expect(state.documents).toHaveLength(1);
     expect(state.jobs).toHaveLength(1);
     expect(enqueuedPayloads).toHaveLength(1);
-    expect(enqueuedPayloads[0]).toEqual({
+    expect(enqueuedPayloads[0]).toMatchObject({
       documentId: body.document.id,
       organizationId: ORG_A,
       processingJobId: state.jobs[0]?.id,
       storageKey: state.documents[0]?.storageKey,
       processingVersion: 1,
     });
+    expect(enqueuedPayloads[0]?.traceparent).toMatch(
+      /^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/,
+    );
     expect(DOCUMENT_PROCESSING_QUEUE_NAME).toBe('document-processing');
     expect(DOCUMENT_PROCESS_JOB_NAME).toBe('process-document');
   });

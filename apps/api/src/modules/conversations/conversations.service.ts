@@ -1,4 +1,7 @@
-import { AIProviderError } from '@enterprise-ai/ai';
+import {
+  AIProviderError,
+  AIProviderNotConfiguredError,
+} from '@enterprise-ai/ai';
 import type { Message } from '@enterprise-ai/database';
 import type { Citation } from '@enterprise-ai/shared';
 import { buildCitationExcerpt } from '../rag/citation-validator.js';
@@ -226,8 +229,24 @@ export class ConversationsService {
         organizationId: input.organizationId,
         question: input.content,
         topK: input.topK,
+        strategy: input.strategy,
+        traceContext: input.traceContext,
       });
     } catch (error) {
+      if (error instanceof AIProviderNotConfiguredError) {
+        this.logger.error(
+          {
+            organizationId: input.organizationId,
+            userId: input.userId,
+            conversationId: input.conversationId,
+            provider: error.provider,
+            code: error.code,
+            message: error.message,
+          },
+          'AI provider not configured for requested RAG strategy',
+        );
+        throw new AiProviderNotConfiguredAppError();
+      }
       if (error instanceof AIProviderError) {
         this.logger.error(
           {

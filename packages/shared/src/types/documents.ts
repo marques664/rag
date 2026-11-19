@@ -24,6 +24,7 @@ export interface DocumentProcessJobPayload {
   processingJobId: string;
   storageKey: string;
   processingVersion: number;
+  traceparent?: string;
 }
 
 export interface DocumentChunkMetadata {

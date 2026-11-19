@@ -678,4 +678,78 @@ describe('document-process.processor', () => {
 
     expect(spies.database.$transaction).not.toHaveBeenCalled();
   });
+
+  it('completes in lexical-only mode without calling embeddings when embeddingProvider is omitted', async () => {
+    const { database, spies } = createDatabaseMock({});
+    const storage = {
+      getObjectBytes: vi.fn(async () => VALID_PDF_BYTES),
+    };
+    const extractor = {
+      extract: vi.fn(async () => ({
+        totalPages: 2,
+        pages: [
+          { pageNumber: 1, text: 'Lexical page one text.' },
+          { pageNumber: 2, text: 'Lexical page two text.' },
+        ],
+      })),
+    };
+
+    const result = await processDocumentJob(
+      createPayload(),
+      { bullmqJobId: JOB_ID, attemptsMade: 0 },
+      {
+        database,
+        storage,
+        extractor,
+        chunker: new PageAwareTokenChunker(),
+        embeddingProvider: undefined,
+        logger: createSilentLogger(),
+        maxAttempts: 3,
+      },
+    );
+
+    expect(result).toEqual({
+      status: 'completed',
+      chunkCount: 2,
+      pageCount: 2,
+    });
+    expect(spies.tx.documentChunk.deleteMany).toHaveBeenCalledWith({
+      where: { documentId: DOC_ID },
+    });
+    expect(spies.tx.$executeRaw).not.toHaveBeenCalled();
+    expect(spies.tx.documentChunk.createMany).toHaveBeenCalledWith({
+      data: expect.arrayContaining([
+        expect.objectContaining({
+          documentId: DOC_ID,
+          organizationId: ORG_ID,
+          content: 'Lexical page one text.',
+          pageNumber: 1,
+          chunkIndex: 0,
+        }),
+        expect.objectContaining({
+          documentId: DOC_ID,
+          organizationId: ORG_ID,
+          content: 'Lexical page two text.',
+          pageNumber: 2,
+          chunkIndex: 1,
+        }),
+      ]),
+    });
+    expect(spies.tx.document.update).toHaveBeenCalledWith({
+      where: { id: DOC_ID },
+      data: expect.objectContaining({
+        status: DocumentStatus.COMPLETED,
+        pageCount: 2,
+        errorMessage: null,
+      }),
+    });
+    expect(spies.tx.processingJob.update).toHaveBeenCalledWith({
+      where: { id: JOB_ID },
+      data: expect.objectContaining({
+        status: ProcessingJobStatus.COMPLETED,
+        attempts: 1,
+        error: null,
+      }),
+    });
+  });
 });

@@ -1,3 +1,4 @@
+import { formatTraceparent } from '@enterprise-ai/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   ForbiddenError,
@@ -99,6 +100,9 @@ export class DocumentsController {
       filename: filePart.filename,
       mimeType: filePart.mimetype,
       buffer,
+      ...(request.traceContext
+        ? { traceparent: formatTraceparent(request.traceContext) }
+        : {}),
     });
 
     return reply.code(201).send({ document });
@@ -148,6 +152,7 @@ export class DocumentsController {
     const result = await this.service.reprocessDocument(
       request.params.id,
       context.organizationId,
+      request.traceContext ? formatTraceparent(request.traceContext) : undefined,
     );
     return reply.code(202).send(result);
   };
