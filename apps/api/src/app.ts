@@ -1,8 +1,14 @@
-import { MembershipRole, type DatabaseClient } from '@enterprise-ai/database';
+import type { EmbeddingProvider, LLMProvider } from '@enterprise-ai/ai';
+import {
+  MembershipRole,
+  PgVectorRetrievalService,
+  type DatabaseClient,
+} from '@enterprise-ai/database';
 import { API_PREFIX, MAX_DOCUMENT_FILE_SIZE_BYTES } from '@enterprise-ai/shared';
 import type {
   DatabaseCheckResult,
   DependencyCheckResult,
+  RetrievalService,
 } from '@enterprise-ai/shared';
 import fastifyMultipart from '@fastify/multipart';
 import {
@@ -23,6 +29,10 @@ import {
   AuthService,
   type AuthServiceConfig,
 } from './modules/auth/auth.service.js';
+import { ConversationsController } from './modules/conversations/conversations.controller.js';
+import { ConversationsRepository } from './modules/conversations/conversations.repository.js';
+import { registerConversationRoutes } from './modules/conversations/conversations.routes.js';
+import { ConversationsService } from './modules/conversations/conversations.service.js';
 import { DocumentsController } from './modules/documents/documents.controller.js';
 import { DocumentsRepository } from './modules/documents/documents.repository.js';
 import { registerDocumentRoutes } from './modules/documents/documents.routes.js';
@@ -32,6 +42,7 @@ import { OrganizationsController } from './modules/organizations/organizations.c
 import { OrganizationsRepository } from './modules/organizations/organizations.repository.js';
 import { registerOrganizationRoutes } from './modules/organizations/organizations.routes.js';
 import { OrganizationsService } from './modules/organizations/organizations.service.js';
+import { RagService } from './modules/rag/rag.service.js';
 import { AppError } from './shared/errors/app-error.js';
 
 export interface BuildAppOptions {
@@ -42,6 +53,11 @@ export interface BuildAppOptions {
   documentStorage?: DocumentStorageService;
   documentQueue?: DocumentQueueService;
   maxDocumentFileSizeBytes?: number;
+  retrievalService?: RetrievalService;
+  embeddingProvider?: EmbeddingProvider;
+  llmProvider?: LLMProvider;
+  ragDefaultTopK?: number;
+  ragMaxContextChars?: number;
   checkDatabase: () => Promise<DatabaseCheckResult>;
   checkRedis: () => Promise<DependencyCheckResult>;
 }
@@ -151,6 +167,40 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       organizationsService,
     );
 
+    const requireMember = createRequireOrganizationRoleHook(
+      organizationsRepository,
+      MembershipRole.MEMBER,
+    );
+    const requireAdmin = createRequireOrganizationRoleHook(
+      organizationsRepository,
+      MembershipRole.ADMIN,
+    );
+
+    const ragService =
+      options.embeddingProvider && options.llmProvider
+        ? new RagService({
+            embeddingProvider: options.embeddingProvider,
+            retrievalService:
+              options.retrievalService ??
+              new PgVectorRetrievalService(database, {
+                defaultTopK: options.ragDefaultTopK,
+              }),
+            llmProvider: options.llmProvider,
+            defaultTopK: options.ragDefaultTopK,
+            maxContextChars: options.ragMaxContextChars,
+          })
+        : undefined;
+
+    const conversationsRepository = new ConversationsRepository(database);
+    const conversationsService = new ConversationsService(
+      conversationsRepository,
+      ragService,
+      app.log,
+    );
+    const conversationsController = new ConversationsController(
+      conversationsService,
+    );
+
     const documentDeps =
       options.documentStorage && options.documentQueue
         ? (() => {
@@ -170,14 +220,8 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
             return {
               controller: documentsController,
               authenticate,
-              requireMember: createRequireOrganizationRoleHook(
-                organizationsRepository,
-                MembershipRole.MEMBER,
-              ),
-              requireAdmin: createRequireOrganizationRoleHook(
-                organizationsRepository,
-                MembershipRole.ADMIN,
-              ),
+              requireMember,
+              requireAdmin,
             };
           })()
         : null;
@@ -191,6 +235,11 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         await registerOrganizationRoutes(instance, {
           controller: organizationsController,
           authenticate,
+        });
+        await registerConversationRoutes(instance, {
+          controller: conversationsController,
+          authenticate,
+          requireMember,
         });
         if (documentDeps) {
           await registerDocumentRoutes(instance, documentDeps);

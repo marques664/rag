@@ -5,6 +5,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
+import type { EmbeddingProvider } from '@enterprise-ai/ai';
 import {
   createDatabaseClient,
   DocumentStatus,
@@ -16,6 +17,7 @@ import {
   DEFAULT_JOB_BACKOFF_MS,
   DOCUMENT_PROCESS_JOB_NAME,
   DOCUMENT_PROCESSING_QUEUE_NAME,
+  EMBEDDING_DIMENSIONS,
   type DocumentProcessJobPayload,
 } from '@enterprise-ai/shared';
 import { Queue, QueueEvents, type Worker } from 'bullmq';
@@ -160,6 +162,31 @@ describe('Sprint 3 Worker document processing integration (PostgreSQL + MinIO + 
   const extractor = new UnpdfTextExtractor();
   const chunker = new PageAwareTokenChunker();
   const silentLogger = pino({ level: 'silent' });
+  const stubEmbeddingProvider: EmbeddingProvider = {
+    providerName: 'openai',
+    model: 'text-embedding-3-small',
+    dimensions: EMBEDDING_DIMENSIONS,
+    embedQuery: async (text) => ({
+      embedding: Array.from({ length: EMBEDDING_DIMENSIONS }, (_, i) =>
+        i === 0 ? Math.max(0.1, text.length % 10) : 0.001,
+      ),
+      model: 'text-embedding-3-small',
+      dimensions: EMBEDDING_DIMENSIONS,
+      usage: { inputTokens: 10, totalTokens: 10 },
+      latencyMs: 1,
+    }),
+    embedDocuments: async (texts) => ({
+      embeddings: texts.map((text, idx) =>
+        Array.from({ length: EMBEDDING_DIMENSIONS }, (_, dim) =>
+          dim === idx % EMBEDDING_DIMENSIONS ? 1 : ((text.length + dim) % 7) * 0.01,
+        ),
+      ),
+      model: 'text-embedding-3-small',
+      dimensions: EMBEDDING_DIMENSIONS,
+      usage: { inputTokens: texts.length * 10, totalTokens: texts.length * 10 },
+      latencyMs: 2,
+    }),
+  };
 
   const trackedMinioKeys = new Set<string>();
   const trackedJobIds = new Set<string>();
@@ -208,6 +235,7 @@ describe('Sprint 3 Worker document processing integration (PostgreSQL + MinIO + 
       storage,
       extractor,
       chunker,
+      embeddingProvider: stubEmbeddingProvider,
       logger: silentLogger,
       maxAttempts: DEFAULT_JOB_ATTEMPTS,
     });
@@ -383,6 +411,21 @@ describe('Sprint 3 Worker document processing integration (PostgreSQL + MinIO + 
       chunkIndex: 0,
       processingJobId: jobV1.id,
     });
+    const embeddedStatsV1 = await db.$queryRaw<
+      Array<{ total: number; with_embedding: number; min_dims: number | null }>
+    >`
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(embedding)::int AS with_embedding,
+        MIN(vector_dims(embedding))::int AS min_dims
+      FROM document_chunks
+      WHERE document_id = ${documentId}::uuid
+    `;
+    expect(embeddedStatsV1[0]).toEqual({
+      total: chunksV1.length,
+      with_embedding: chunksV1.length,
+      min_dims: EMBEDDING_DIMENSIONS,
+    });
 
     // Reprocess with v2 PDF -> replaces old chunks completely with zero duplicates
     const pdfV2 = buildTestPdf([
@@ -451,6 +494,21 @@ describe('Sprint 3 Worker document processing integration (PostgreSQL + MinIO + 
     expect(
       chunksV2.some((c) => c.content.includes('Safety procedure step')),
     ).toBe(false);
+    const embeddedStatsV2 = await db.$queryRaw<
+      Array<{ total: number; with_embedding: number; min_dims: number | null }>
+    >`
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(embedding)::int AS with_embedding,
+        MIN(vector_dims(embedding))::int AS min_dims
+      FROM document_chunks
+      WHERE document_id = ${documentId}::uuid
+    `;
+    expect(embeddedStatsV2[0]).toEqual({
+      total: 2,
+      with_embedding: 2,
+      min_dims: EMBEDDING_DIMENSIONS,
+    });
 
     // Stale v1 job re-dispatched after v2 completion is safely ignored without touching v2 chunks
     const staleOutcome = await processDocumentJob(
@@ -467,6 +525,7 @@ describe('Sprint 3 Worker document processing integration (PostgreSQL + MinIO + 
         storage,
         extractor,
         chunker,
+        embeddingProvider: stubEmbeddingProvider,
         logger: silentLogger,
         maxAttempts: DEFAULT_JOB_ATTEMPTS,
       },
@@ -489,6 +548,7 @@ describe('Sprint 3 Worker document processing integration (PostgreSQL + MinIO + 
         storage,
         extractor,
         chunker,
+        embeddingProvider: stubEmbeddingProvider,
         logger: silentLogger,
         maxAttempts: DEFAULT_JOB_ATTEMPTS,
       },
@@ -554,6 +614,7 @@ describe('Sprint 3 Worker document processing integration (PostgreSQL + MinIO + 
         storage,
         extractor: racingExtractor,
         chunker,
+        embeddingProvider: stubEmbeddingProvider,
         logger: silentLogger,
         maxAttempts: DEFAULT_JOB_ATTEMPTS,
       },

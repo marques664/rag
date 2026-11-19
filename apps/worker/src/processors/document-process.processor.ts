@@ -1,11 +1,19 @@
 import { createHash } from 'node:crypto';
 import {
+  AIProviderError,
+  type EmbeddingProvider,
+} from '@enterprise-ai/ai';
+import {
+  assertValidVector,
   DocumentStatus,
-  Prisma,
+  insertDocumentChunksWithEmbeddings,
   ProcessingJobStatus,
   type DatabaseClient,
 } from '@enterprise-ai/database';
-import type { DocumentProcessJobPayload } from '@enterprise-ai/shared';
+import {
+  EMBEDDING_DIMENSIONS,
+  type DocumentProcessJobPayload,
+} from '@enterprise-ai/shared';
 import { UnrecoverableError } from 'bullmq';
 import { z } from 'zod';
 import type { WorkerLogger } from '../infrastructure/logger.js';
@@ -28,7 +36,6 @@ const jobPayloadSchema = z.object({
   processingVersion: z.number().int().positive(),
 });
 
-const CHUNK_INSERT_BATCH_SIZE = 500;
 const MAX_ERROR_LENGTH = 1000;
 
 export interface DocumentProcessorDeps {
@@ -36,6 +43,7 @@ export interface DocumentProcessorDeps {
   storage: DocumentStorageClient;
   extractor: PdfTextExtractor;
   chunker: DocumentChunker;
+  embeddingProvider: EmbeddingProvider;
   logger: WorkerLogger;
   maxAttempts: number;
 }
@@ -214,6 +222,66 @@ export async function processDocumentJob(
       throw new UnrecoverableError('PDF text extraction produced zero chunks');
     }
 
+    // Re-check processingVersion before incurring external embedding API calls.
+    const preEmbedDoc = await deps.database.document.findUnique({
+      where: { id: payload.documentId },
+      select: { processingVersion: true },
+    });
+    if (!preEmbedDoc) {
+      log.info('Document deleted before embedding generation; skipping cleanly');
+      return { status: 'skipped', reason: 'missing_document' };
+    }
+    if (preEmbedDoc.processingVersion !== payload.processingVersion) {
+      log.info(
+        { currentVersion: preEmbedDoc.processingVersion },
+        'Document processingVersion superseded before embedding generation; skipping stale job',
+      );
+      return { status: 'skipped', reason: 'stale_version' };
+    }
+
+    if (deps.embeddingProvider.dimensions !== EMBEDDING_DIMENSIONS) {
+      throw new UnrecoverableError(
+        `Embedding provider dimension mismatch: expected ${EMBEDDING_DIMENSIONS}, got ${deps.embeddingProvider.dimensions}`,
+      );
+    }
+
+    // Generate embeddings outside the DB transaction so FOR UPDATE locks are never held across HTTP calls.
+    let embeddingResult;
+    try {
+      embeddingResult = await deps.embeddingProvider.embedDocuments(
+        chunks.map((chunk) => chunk.content),
+      );
+    } catch (error) {
+      if (error instanceof AIProviderError && !error.retryable) {
+        throw new UnrecoverableError(error.message);
+      }
+      throw error;
+    }
+
+    if (embeddingResult.embeddings.length !== chunks.length) {
+      throw new UnrecoverableError(
+        `Embedding count mismatch: expected ${chunks.length}, received ${embeddingResult.embeddings.length}`,
+      );
+    }
+
+    for (let i = 0; i < embeddingResult.embeddings.length; i += 1) {
+      const vector = embeddingResult.embeddings[i];
+      if (!vector) {
+        throw new UnrecoverableError(
+          `Missing embedding vector for chunk index ${i}`,
+        );
+      }
+      try {
+        assertValidVector(vector, EMBEDDING_DIMENSIONS);
+      } catch (error) {
+        throw new UnrecoverableError(
+          error instanceof Error
+            ? error.message
+            : `Invalid embedding vector at chunk index ${i}`,
+        );
+      }
+    }
+
     const commitResult = await deps.database.$transaction(async (tx) => {
       const lockedDocs = await tx.$queryRaw<
         Array<{ id: string; processing_version: number }>
@@ -237,20 +305,19 @@ export async function processDocumentJob(
         where: { documentId: payload.documentId },
       });
 
-      for (let i = 0; i < chunks.length; i += CHUNK_INSERT_BATCH_SIZE) {
-        const batch = chunks.slice(i, i + CHUNK_INSERT_BATCH_SIZE);
-        await tx.documentChunk.createMany({
-          data: batch.map((chunk) => ({
-            documentId: payload.documentId,
-            organizationId: document.organizationId,
-            content: chunk.content,
-            pageNumber: chunk.pageNumber,
-            chunkIndex: chunk.chunkIndex,
-            tokenCount: chunk.tokenCount,
-            metadata: chunk.metadata as Prisma.InputJsonValue,
-          })),
-        });
-      }
+      await insertDocumentChunksWithEmbeddings(
+        tx,
+        chunks.map((chunk, index) => ({
+          documentId: payload.documentId,
+          organizationId: document.organizationId,
+          content: chunk.content,
+          embedding: embeddingResult.embeddings[index]!,
+          pageNumber: chunk.pageNumber,
+          chunkIndex: chunk.chunkIndex,
+          tokenCount: chunk.tokenCount,
+          metadata: chunk.metadata,
+        })),
+      );
 
       const completedAt = new Date();
       await tx.document.update({
@@ -285,7 +352,12 @@ export async function processDocumentJob(
     }
 
     log.info(
-      { chunkCount: chunks.length, pageCount: extracted.totalPages },
+      {
+        chunkCount: chunks.length,
+        pageCount: extracted.totalPages,
+        embeddingModel: embeddingResult.model,
+        embeddingLatencyMs: embeddingResult.latencyMs,
+      },
       'Document processing completed',
     );
 

@@ -1,6 +1,7 @@
 // Sprint 1: Prisma configuration & PostgreSQL + pgvector connection.
 // Sprint 2: Core identity, organization, membership, invitation, and session models.
 // Sprint 3: Document ingestion, chunk persistence, and processing job lifecycle models.
+// Sprint 4: pgvector chunk embeddings, conversations, messages, citations, and usage events.
 
 generator client {
   provider            = "prisma-client"
@@ -39,6 +40,11 @@ enum ProcessingJobStatus {
   FAILED
 }
 
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
 model Organization {
   id        String   @id @default(uuid()) @db.Uuid
   name      String
@@ -50,6 +56,8 @@ model Organization {
   invitations    OrganizationInvitation[]
   documents      Document[]
   documentChunks DocumentChunk[]
+  conversations  Conversation[]
+  usageEvents    UsageEvent[]
 
   @@map("organizations")
 }
@@ -66,6 +74,8 @@ model User {
   refreshTokens     RefreshToken[]
   sentInvitations   OrganizationInvitation[] @relation("InvitedByUser")
   uploadedDocuments Document[]               @relation("UploadedDocuments")
+  conversations     Conversation[]
+  usageEvents       UsageEvent[]
 
   @@map("users")
 }
@@ -153,18 +163,20 @@ model Document {
 }
 
 model DocumentChunk {
-  id             String   @id @default(uuid()) @db.Uuid
-  documentId     String   @map("document_id") @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
+  id             String                      @id @default(uuid()) @db.Uuid
+  documentId     String                      @map("document_id") @db.Uuid
+  organizationId String                      @map("organization_id") @db.Uuid
   content        String
-  pageNumber     Int      @map("page_number")
-  chunkIndex     Int      @map("chunk_index")
-  tokenCount     Int      @map("token_count")
-  metadata       Json     @default("{}")
-  createdAt      DateTime @default(now()) @map("created_at")
+  embedding      Unsupported("vector(1536)")?
+  pageNumber     Int                         @map("page_number")
+  chunkIndex     Int                         @map("chunk_index")
+  tokenCount     Int                         @map("token_count")
+  metadata       Json                        @default("{}")
+  createdAt      DateTime                    @default(now()) @map("created_at")
 
-  document     Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document     Document          @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  citations    MessageCitation[]
 
   @@unique([documentId, chunkIndex])
   @@index([documentId, pageNumber])
@@ -189,4 +201,81 @@ model ProcessingJob {
   @@index([documentId, createdAt])
   @@index([status])
   @@map("processing_jobs")
+}
+
+model Conversation {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  title          String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages     Message[]
+  usageEvents  UsageEvent[]
+
+  @@index([organizationId, userId, updatedAt])
+  @@index([organizationId, createdAt])
+  @@index([userId])
+  @@map("conversations")
+}
+
+model Message {
+  id                  String      @id @default(uuid()) @db.Uuid
+  conversationId      String      @map("conversation_id") @db.Uuid
+  role                MessageRole
+  content             String
+  insufficientContext Boolean     @default(false) @map("insufficient_context")
+  tokenUsage          Json?       @map("token_usage")
+  createdAt           DateTime    @default(now()) @map("created_at")
+
+  conversation Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  citations    MessageCitation[]
+  usageEvents  UsageEvent[]
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+model MessageCitation {
+  id             String   @id @default(uuid()) @db.Uuid
+  messageId      String   @map("message_id") @db.Uuid
+  chunkId        String   @map("chunk_id") @db.Uuid
+  relevanceScore Float?   @map("relevance_score")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  message Message       @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  chunk   DocumentChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, chunkId])
+  @@index([messageId])
+  @@index([chunkId])
+  @@map("message_citations")
+}
+
+model UsageEvent {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  conversationId String?  @map("conversation_id") @db.Uuid
+  messageId      String?  @map("message_id") @db.Uuid
+  operation      String   @default("rag_query")
+  model          String
+  inputTokens    Int      @map("input_tokens")
+  outputTokens   Int      @default(0) @map("output_tokens")
+  latencyMs      Int      @map("latency_ms")
+  estimatedCost  Decimal? @map("estimated_cost") @db.Decimal(12, 8)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  message      Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, model, createdAt])
+  @@index([conversationId])
+  @@map("usage_events")
 }

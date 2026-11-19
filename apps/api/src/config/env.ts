@@ -1,4 +1,8 @@
-import { MAX_DOCUMENT_FILE_SIZE_BYTES } from '@enterprise-ai/shared';
+import {
+  DEFAULT_RETRIEVAL_TOP_K,
+  MAX_DOCUMENT_FILE_SIZE_BYTES,
+  MAX_RETRIEVAL_TOP_K,
+} from '@enterprise-ai/shared';
 import { z } from 'zod';
 
 const envSchema = z.object({
@@ -30,6 +34,18 @@ const envSchema = z.object({
     .min(1024)
     .max(100 * 1024 * 1024)
     .default(MAX_DOCUMENT_FILE_SIZE_BYTES),
+  RAG_DEFAULT_TOP_K: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_RETRIEVAL_TOP_K)
+    .default(DEFAULT_RETRIEVAL_TOP_K),
+  RAG_MAX_CONTEXT_CHARS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .max(200_000)
+    .default(24_000),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

@@ -1,5 +1,14 @@
 import path from 'node:path';
-import { checkDatabaseHealth, createDatabaseClient } from '@enterprise-ai/database';
+import {
+  createEmbeddingProvider,
+  createLLMProvider,
+  loadAIConfig,
+} from '@enterprise-ai/ai';
+import {
+  checkDatabaseHealth,
+  createDatabaseClient,
+  PgVectorRetrievalService,
+} from '@enterprise-ai/database';
 import { config as loadDotenv } from 'dotenv';
 import { buildApp } from './app.js';
 import { loadEnv } from './config/env.js';
@@ -23,6 +32,17 @@ async function startServer(): Promise<void> {
     bucket: env.MINIO_BUCKET,
   });
   const documentQueue = new BullMqDocumentQueue(env.REDIS_URL);
+  const aiConfig = loadAIConfig();
+  const retrievalService = new PgVectorRetrievalService(database, {
+    defaultTopK: env.RAG_DEFAULT_TOP_K,
+  });
+  const hasAiCredentials = Boolean(aiConfig.openai.apiKey);
+  const embeddingProvider = hasAiCredentials
+    ? createEmbeddingProvider(aiConfig)
+    : undefined;
+  const llmProvider = hasAiCredentials
+    ? createLLMProvider(aiConfig)
+    : undefined;
 
   const app = buildApp({
     nodeEnv: env.NODE_ENV,
@@ -36,9 +56,20 @@ async function startServer(): Promise<void> {
     documentStorage,
     documentQueue,
     maxDocumentFileSizeBytes: env.MAX_DOCUMENT_FILE_SIZE_BYTES,
+    retrievalService,
+    embeddingProvider,
+    llmProvider,
+    ragDefaultTopK: env.RAG_DEFAULT_TOP_K,
+    ragMaxContextChars: env.RAG_MAX_CONTEXT_CHARS,
     checkDatabase: () => checkDatabaseHealth(database),
     checkRedis: () => checkRedisHealth(redis),
   });
+
+  if (!hasAiCredentials) {
+    app.log.warn(
+      'OPENAI_API_KEY is not configured; RAG message generation will return 503 AI_PROVIDER_NOT_CONFIGURED',
+    );
+  }
 
   let isShuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {

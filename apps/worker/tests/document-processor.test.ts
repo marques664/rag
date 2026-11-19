@@ -1,10 +1,19 @@
 import { createHash } from 'node:crypto';
 import {
+  AIAuthenticationError,
+  AIRateLimitError,
+  type EmbeddingProvider,
+} from '@enterprise-ai/ai';
+import {
   DocumentStatus,
+  Prisma,
   ProcessingJobStatus,
   type DatabaseClient,
 } from '@enterprise-ai/database';
-import type { DocumentProcessJobPayload } from '@enterprise-ai/shared';
+import {
+  EMBEDDING_DIMENSIONS,
+  type DocumentProcessJobPayload,
+} from '@enterprise-ai/shared';
 import { UnrecoverableError } from 'bullmq';
 import pino from 'pino';
 import { describe, expect, it, vi } from 'vitest';
@@ -38,6 +47,36 @@ function createSilentLogger() {
   return pino({ level: 'silent' });
 }
 
+function createStubEmbeddingProvider(
+  overrides: Partial<EmbeddingProvider> = {},
+): EmbeddingProvider {
+  return {
+    providerName: 'openai',
+    model: 'text-embedding-3-small',
+    dimensions: EMBEDDING_DIMENSIONS,
+    embedQuery: vi.fn(async () => ({
+      embedding: Array.from({ length: EMBEDDING_DIMENSIONS }, () => 0.01),
+      model: 'text-embedding-3-small',
+      dimensions: EMBEDDING_DIMENSIONS,
+      usage: { inputTokens: 5, totalTokens: 5 },
+      latencyMs: 1,
+    })),
+    embedDocuments: vi.fn(async (texts: string[]) => ({
+      embeddings: texts.map((_, index) =>
+        Array.from(
+          { length: EMBEDDING_DIMENSIONS },
+          (_v, dim) => (index + 1) * 0.001 + dim * 0.00001,
+        ),
+      ),
+      model: 'text-embedding-3-small',
+      dimensions: EMBEDDING_DIMENSIONS,
+      usage: { inputTokens: texts.length * 10, totalTokens: texts.length * 10 },
+      latencyMs: 2,
+    })),
+    ...overrides,
+  };
+}
+
 function createDatabaseMock(options: {
   document?: Record<string, unknown> | null;
   processingJob?: Record<string, unknown> | null;
@@ -49,6 +88,7 @@ function createDatabaseMock(options: {
         ? []
         : [options.lockedRow ?? { id: DOC_ID, processing_version: 1 }],
     ),
+    $executeRaw: vi.fn(async () => 2),
     documentChunk: {
       deleteMany: vi.fn(async () => ({ count: 2 })),
       createMany: vi.fn(async () => ({ count: 2 })),
@@ -104,7 +144,7 @@ function createDatabaseMock(options: {
 }
 
 describe('document-process.processor', () => {
-  it('completes happy path: deletes old chunks, inserts new chunks with orgId, and marks COMPLETED', async () => {
+  it('completes happy path: generates embeddings, deletes old chunks, inserts chunks with vectors, and marks COMPLETED', async () => {
     const { database, spies } = createDatabaseMock({});
     const storage = {
       getObjectBytes: vi.fn(async () => VALID_PDF_BYTES),
@@ -118,6 +158,7 @@ describe('document-process.processor', () => {
         ],
       })),
     };
+    const embeddingProvider = createStubEmbeddingProvider();
 
     const result = await processDocumentJob(
       createPayload(),
@@ -127,6 +168,7 @@ describe('document-process.processor', () => {
         storage,
         extractor,
         chunker: new PageAwareTokenChunker(),
+        embeddingProvider,
         logger: createSilentLogger(),
         maxAttempts: 3,
       },
@@ -137,25 +179,21 @@ describe('document-process.processor', () => {
       chunkCount: 2,
       pageCount: 2,
     });
+    expect(embeddingProvider.embedDocuments).toHaveBeenCalledWith([
+      'Page one text content.',
+      'Page two text content.',
+    ]);
     expect(spies.tx.documentChunk.deleteMany).toHaveBeenCalledWith({
       where: { documentId: DOC_ID },
     });
-    expect(spies.tx.documentChunk.createMany).toHaveBeenCalledWith({
-      data: expect.arrayContaining([
-        expect.objectContaining({
-          documentId: DOC_ID,
-          organizationId: ORG_ID,
-          pageNumber: 1,
-          chunkIndex: 0,
-        }),
-        expect.objectContaining({
-          documentId: DOC_ID,
-          organizationId: ORG_ID,
-          pageNumber: 2,
-          chunkIndex: 1,
-        }),
-      ]),
-    });
+    expect(spies.tx.$executeRaw).toHaveBeenCalledTimes(1);
+    const executedSql = (
+      spies.tx.$executeRaw.mock.calls[0] as unknown[]
+    )[0] as Prisma.Sql;
+    expect(executedSql.strings.join('?')).toContain('INSERT INTO "document_chunks"');
+    expect(executedSql.strings.join('?')).toContain('::vector(1536)');
+    expect(executedSql.values).toContain('Page one text content.');
+    expect(executedSql.values).toContain('Page two text content.');
     expect(spies.tx.document.update).toHaveBeenCalledWith({
       where: { id: DOC_ID },
       data: expect.objectContaining({
@@ -194,6 +232,7 @@ describe('document-process.processor', () => {
     });
     const storage = { getObjectBytes: vi.fn() };
     const extractor = { extract: vi.fn() };
+    const embeddingProvider = createStubEmbeddingProvider();
 
     const result = await processDocumentJob(
       createPayload(),
@@ -203,6 +242,7 @@ describe('document-process.processor', () => {
         storage,
         extractor,
         chunker: new PageAwareTokenChunker(),
+        embeddingProvider,
         logger: createSilentLogger(),
         maxAttempts: 3,
       },
@@ -210,6 +250,7 @@ describe('document-process.processor', () => {
 
     expect(result).toEqual({ status: 'skipped', reason: 'already_completed' });
     expect(storage.getObjectBytes).not.toHaveBeenCalled();
+    expect(embeddingProvider.embedDocuments).not.toHaveBeenCalled();
   });
 
   it('skips stale processingVersion without modifying document or chunks', async () => {
@@ -225,6 +266,7 @@ describe('document-process.processor', () => {
     });
     const storage = { getObjectBytes: vi.fn() };
     const extractor = { extract: vi.fn() };
+    const embeddingProvider = createStubEmbeddingProvider();
 
     const result = await processDocumentJob(
       createPayload({ processingVersion: 1 }),
@@ -234,6 +276,7 @@ describe('document-process.processor', () => {
         storage,
         extractor,
         chunker: new PageAwareTokenChunker(),
+        embeddingProvider,
         logger: createSilentLogger(),
         maxAttempts: 3,
       },
@@ -242,6 +285,7 @@ describe('document-process.processor', () => {
     expect(result).toEqual({ status: 'skipped', reason: 'stale_version' });
     expect(spies.database.document.updateMany).not.toHaveBeenCalled();
     expect(storage.getObjectBytes).not.toHaveBeenCalled();
+    expect(embeddingProvider.embedDocuments).not.toHaveBeenCalled();
   });
 
   it('aborts cleanly if document is deleted mid-flight before transaction commit', async () => {
@@ -255,6 +299,7 @@ describe('document-process.processor', () => {
         pages: [{ pageNumber: 1, text: 'Content before delete' }],
       })),
     };
+    const embeddingProvider = createStubEmbeddingProvider();
 
     const result = await processDocumentJob(
       createPayload(),
@@ -264,6 +309,7 @@ describe('document-process.processor', () => {
         storage,
         extractor,
         chunker: new PageAwareTokenChunker(),
+        embeddingProvider,
         logger: createSilentLogger(),
         maxAttempts: 3,
       },
@@ -271,7 +317,7 @@ describe('document-process.processor', () => {
 
     expect(result).toEqual({ status: 'skipped', reason: 'missing_document' });
     expect(spies.tx.documentChunk.deleteMany).not.toHaveBeenCalled();
-    expect(spies.tx.documentChunk.createMany).not.toHaveBeenCalled();
+    expect(spies.tx.$executeRaw).not.toHaveBeenCalled();
   });
 
   it('throws UnrecoverableError on organization mismatch', async () => {
@@ -295,6 +341,7 @@ describe('document-process.processor', () => {
           storage: { getObjectBytes: vi.fn() },
           extractor: { extract: vi.fn() },
           chunker: new PageAwareTokenChunker(),
+          embeddingProvider: createStubEmbeddingProvider(),
           logger: createSilentLogger(),
           maxAttempts: 3,
         },
@@ -319,6 +366,7 @@ describe('document-process.processor', () => {
           storage,
           extractor: { extract: vi.fn() },
           chunker: new PageAwareTokenChunker(),
+          embeddingProvider: createStubEmbeddingProvider(),
           logger: createSilentLogger(),
           maxAttempts: 3,
         },
@@ -357,6 +405,7 @@ describe('document-process.processor', () => {
             }),
           },
           chunker: new PageAwareTokenChunker(),
+          embeddingProvider: createStubEmbeddingProvider(),
           logger: createSilentLogger(),
           maxAttempts: 3,
         },
@@ -389,6 +438,7 @@ describe('document-process.processor', () => {
           },
           extractor: { extract: vi.fn() },
           chunker: new PageAwareTokenChunker(),
+          embeddingProvider: createStubEmbeddingProvider(),
           logger: createSilentLogger(),
           maxAttempts: 3,
         },
@@ -421,6 +471,7 @@ describe('document-process.processor', () => {
           },
           extractor: { extract: vi.fn() },
           chunker: new PageAwareTokenChunker(),
+          embeddingProvider: createStubEmbeddingProvider(),
           logger: createSilentLogger(),
           maxAttempts: 3,
         },
@@ -464,10 +515,167 @@ describe('document-process.processor', () => {
           },
           extractor: { extract: vi.fn() },
           chunker: new PageAwareTokenChunker(),
+          embeddingProvider: createStubEmbeddingProvider(),
           logger: createSilentLogger(),
           maxAttempts: 3,
         },
       ),
     ).rejects.toThrow('Transient MinIO error');
+  });
+
+  it('skips embedding API call if processingVersion is superseded before embedding generation', async () => {
+    const { database, spies } = createDatabaseMock({});
+    spies.database.document.findUnique
+      .mockResolvedValueOnce({
+        id: DOC_ID,
+        organizationId: ORG_ID,
+        filename: 'policy.pdf',
+        storageKey: `organizations/${ORG_ID}/documents/${DOC_ID}/file.pdf`,
+        checksum: VALID_CHECKSUM,
+        status: DocumentStatus.PENDING,
+        processingVersion: 1,
+      })
+      .mockResolvedValueOnce({
+        processingVersion: 2,
+      });
+
+    const embeddingProvider = createStubEmbeddingProvider();
+
+    const outcome = await processDocumentJob(
+      createPayload({ processingVersion: 1 }),
+      { bullmqJobId: JOB_ID, attemptsMade: 0 },
+      {
+        database,
+        storage: { getObjectBytes: vi.fn(async () => VALID_PDF_BYTES) },
+        extractor: {
+          extract: vi.fn(async () => ({
+            totalPages: 1,
+            pages: [{ pageNumber: 1, text: 'Some extracted text.' }],
+          })),
+        },
+        chunker: new PageAwareTokenChunker(),
+        embeddingProvider,
+        logger: createSilentLogger(),
+        maxAttempts: 3,
+      },
+    );
+
+    expect(outcome).toEqual({ status: 'skipped', reason: 'stale_version' });
+    expect(embeddingProvider.embedDocuments).not.toHaveBeenCalled();
+    expect(spies.database.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('maps non-retryable AIProviderError to UnrecoverableError and marks Document FAILED immediately', async () => {
+    const { database, spies } = createDatabaseMock({});
+    const embeddingProvider = createStubEmbeddingProvider({
+      embedDocuments: vi.fn(async () => {
+        throw new AIAuthenticationError('openai', 'Invalid OpenAI API key', 401);
+      }),
+    });
+
+    await expect(
+      processDocumentJob(
+        createPayload(),
+        { bullmqJobId: JOB_ID, attemptsMade: 0 },
+        {
+          database,
+          storage: { getObjectBytes: vi.fn(async () => VALID_PDF_BYTES) },
+          extractor: {
+            extract: vi.fn(async () => ({
+              totalPages: 1,
+              pages: [{ pageNumber: 1, text: 'Page text' }],
+            })),
+          },
+          chunker: new PageAwareTokenChunker(),
+          embeddingProvider,
+          logger: createSilentLogger(),
+          maxAttempts: 3,
+        },
+      ),
+    ).rejects.toBeInstanceOf(UnrecoverableError);
+
+    expect(spies.database.$transaction).not.toHaveBeenCalled();
+    expect(spies.database.document.updateMany).toHaveBeenLastCalledWith({
+      where: { id: DOC_ID, processingVersion: 1 },
+      data: expect.objectContaining({
+        status: DocumentStatus.FAILED,
+      }),
+    });
+  });
+
+  it('rethrows retryable AIProviderError without wrapping in UnrecoverableError so BullMQ retries', async () => {
+    const { database, spies } = createDatabaseMock({});
+    const embeddingProvider = createStubEmbeddingProvider({
+      embedDocuments: vi.fn(async () => {
+        throw new AIRateLimitError('openai', 'Rate limit exceeded', {
+          retryAfterMs: 1000,
+        });
+      }),
+    });
+
+    let thrown: unknown;
+    try {
+      await processDocumentJob(
+        createPayload(),
+        { bullmqJobId: JOB_ID, attemptsMade: 0 },
+        {
+          database,
+          storage: { getObjectBytes: vi.fn(async () => VALID_PDF_BYTES) },
+          extractor: {
+            extract: vi.fn(async () => ({
+              totalPages: 1,
+              pages: [{ pageNumber: 1, text: 'Page text' }],
+            })),
+          },
+          chunker: new PageAwareTokenChunker(),
+          embeddingProvider,
+          logger: createSilentLogger(),
+          maxAttempts: 3,
+        },
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(AIRateLimitError);
+    expect(thrown).not.toBeInstanceOf(UnrecoverableError);
+    expect(spies.database.$transaction).not.toHaveBeenCalled();
+    // Intermediate attempt: Document stays PROCESSING
+    expect(spies.database.document.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects embedding count or dimension mismatches as UnrecoverableError before DB transaction', async () => {
+    const { database, spies } = createDatabaseMock({});
+    const embeddingProvider = createStubEmbeddingProvider({
+      embedDocuments: vi.fn(async () => ({
+        embeddings: [[0.1, 0.2]],
+        model: 'text-embedding-3-small',
+        dimensions: EMBEDDING_DIMENSIONS,
+        latencyMs: 1,
+      })),
+    });
+
+    await expect(
+      processDocumentJob(
+        createPayload(),
+        { bullmqJobId: JOB_ID, attemptsMade: 0 },
+        {
+          database,
+          storage: { getObjectBytes: vi.fn(async () => VALID_PDF_BYTES) },
+          extractor: {
+            extract: vi.fn(async () => ({
+              totalPages: 1,
+              pages: [{ pageNumber: 1, text: 'Page text' }],
+            })),
+          },
+          chunker: new PageAwareTokenChunker(),
+          embeddingProvider,
+          logger: createSilentLogger(),
+          maxAttempts: 3,
+        },
+      ),
+    ).rejects.toBeInstanceOf(UnrecoverableError);
+
+    expect(spies.database.$transaction).not.toHaveBeenCalled();
   });
 });

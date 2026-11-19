@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { createEmbeddingProvider, loadAIConfig } from '@enterprise-ai/ai';
 import { createDatabaseClient } from '@enterprise-ai/database';
 import { config as loadDotenv } from 'dotenv';
 import { loadWorkerEnv } from './config/env.js';
@@ -14,6 +15,8 @@ loadDotenv();
 
 async function startWorker(): Promise<void> {
   const env = loadWorkerEnv();
+  const aiConfig = loadAIConfig();
+  const embeddingProvider = createEmbeddingProvider(aiConfig);
   const logger = createWorkerLogger({
     nodeEnv: env.NODE_ENV,
     logLevel: env.LOG_LEVEL,
@@ -41,6 +44,7 @@ async function startWorker(): Promise<void> {
     storage,
     extractor,
     chunker,
+    embeddingProvider,
     logger,
     maxAttempts: env.WORKER_MAX_ATTEMPTS,
   });
@@ -50,6 +54,9 @@ async function startWorker(): Promise<void> {
       concurrency: env.WORKER_CONCURRENCY,
       maxAttempts: env.WORKER_MAX_ATTEMPTS,
       bucket: env.MINIO_BUCKET,
+      embeddingProvider: embeddingProvider.providerName,
+      embeddingModel: embeddingProvider.model,
+      embeddingDimensions: embeddingProvider.dimensions,
     },
     'Document processing worker started',
   );

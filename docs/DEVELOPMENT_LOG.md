@@ -84,3 +84,28 @@ Implemented the complete Sprint 3 asynchronous PDF document ingestion pipeline: 
 - `pnpm db:generate`, `prisma migrate dev --name sprint3_document_processing`, and `prisma migrate deploy` (against `enterprise_knowledge_ai_test`): succeeded.
 - `pnpm typecheck`, `pnpm lint`, `pnpm build`: all passed with exit code `0`.
 - `pnpm test` (against live `enterprise_knowledge_ai_test` PostgreSQL, Redis, and MinIO): **11 test files, 55 tests passed (55/55)**.
+
+## 2026-11-18 — Sprint 4 Core RAG Pipeline (AI Providers, pgvector Retrieval, Grounded Conversations)
+
+### Summary
+
+Implemented the complete Sprint 4 Core RAG pipeline: replaceable `@enterprise-ai/ai` OpenAI embedding & LLM providers, `pgvector` `vector(1536)` schema & partial HNSW cosine index, tenant-isolated semantic retrieval, worker chunk embedding persistence, grounded RAG orchestration with prompt-injection defenses & deterministic citation validation, `/api/v1/conversations` endpoints, and unit + live integration verification.
+
+### Implemented
+
+- **Shared RAG Contracts (`packages/shared`)**: Exported `EMBEDDING_DIMENSIONS` (`1536`), `DEFAULT_RETRIEVAL_TOP_K` (`5`), `MAX_RETRIEVAL_TOP_K` (`20`), `RetrieveChunksInput`, `RetrievedChunk`, `RetrievalService`, `Citation`, `UsageInformation`, and `RAGResponse`.
+- **AI Provider Abstraction (`packages/ai`)**: Built `@enterprise-ai/ai` using Node.js 24 native `fetch` + Zod (`loadAIConfig`, `OpenAIEmbeddingProvider`, `OpenAILLMProvider`, `createEmbeddingProvider`, `createLLMProvider`, `AIProviderError` hierarchy with secret redaction, `AbortSignal` timeouts, `429`/`5xx` retries, and `estimateModelCostUsd`).
+- **Database Schema, Migration & pgvector Retrieval (`packages/database`)**:
+  - Deployed migration `20261118183223_sprint4_core_rag` adding `DocumentChunk.embedding` (`vector(1536)`), partial HNSW index `document_chunks_embedding_hnsw_cosine_idx` (`WHERE embedding IS NOT NULL`), `MessageRole`, `Conversation`, `Message`, `MessageCitation`, and `UsageEvent`.
+  - Implemented `assertValidVector`, `formatPgVectorLiteral`, `insertDocumentChunksWithEmbeddings`, `updateDocumentChunkEmbedding`, and `PgVectorRetrievalService` enforcing SQL-level `organization_id`, `COMPLETED` document status, and `embedding IS NOT NULL` filters.
+- **Worker Embedding Persistence (`apps/worker`)**: Wired `EmbeddingProvider.embedDocuments` into `document-process.processor.ts` (outside DB row locks, with `processingVersion` re-check and `UnrecoverableError` mapping for non-retryable `AIProviderError`) and atomic `insertDocumentChunksWithEmbeddings` persistence inside the `FOR UPDATE` transaction.
+- **RAG Orchestration & Conversations API (`apps/api`)**:
+  - Implemented `apps/api/src/modules/rag/` (`XmlContextAssemblyService`, grounded system prompt, `0`-chunk short-circuit, `parseStructuredLLMResponse`, deterministic `validateCitations`, `RagService`).
+  - Implemented `apps/api/src/modules/conversations/` (`POST /conversations`, `GET /conversations`, `GET /conversations/:id`, `DELETE /conversations/:id`, `POST /conversations/:id/messages`, `GET /conversations/:id/messages`) enforcing `authenticate`, `x-organization-id` membership, `(id, organizationId, userId)` ownership, atomic turn + citation + `UsageEvent` persistence, and `503` provider failure handling without partial assistant messages.
+- **Automated Tests**: Added unit tests (`packages/ai/tests/`, `packages/database/tests/retrieval.test.ts`, `apps/api/tests/rag.unit.test.ts`) and live `pgvector`/PostgreSQL integration suites (`packages/database/tests/retrieval.integration.test.ts`, `apps/api/tests/rag-conversations.integration.test.ts`, and `vector(1536)` assertions in `apps/worker/tests/document-process.integration.test.ts`).
+
+### Verification
+
+- `pnpm db:generate`, `prisma migrate dev`, and `prisma migrate deploy` (against `enterprise_knowledge_ai_test`): succeeded.
+- `pnpm build`, `pnpm typecheck`, `pnpm lint`: all passed with exit code `0`.
+- `pnpm test` (against live `enterprise_knowledge_ai_test` PostgreSQL/`pgvector`, Redis, and MinIO): **18 test files, 114 tests passed (114/114)**.

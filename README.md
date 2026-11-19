@@ -6,10 +6,11 @@ Multi-tenant AI-powered knowledge management platform designed to transform unst
 
 This project follows a **Modular Monolith with an independent background worker** organized as a `pnpm` monorepo:
 
-- `apps/api`: Fastify v5 + TypeScript REST API with Zod validation and Pino structured logging.
-- `apps/worker` (`@enterprise-ai/worker`): Independent BullMQ background worker that downloads PDFs from MinIO, extracts per-page text with `unpdf`, generates overlapping chunks, and persists chunks atomically in PostgreSQL.
-- `packages/database`: Prisma ORM (`prisma-client` + `@prisma/adapter-pg`) and PostgreSQL + `pgvector` health/connection utilities.
-- `packages/shared`: Shared domain-neutral constants, health types, and document processing contracts.
+- `apps/api`: Fastify v5 + TypeScript REST API with Zod validation, Pino structured logging, tenant-isolated documents, grounded RAG orchestration, and `/api/v1/conversations`.
+- `apps/worker` (`@enterprise-ai/worker`): Independent BullMQ background worker that downloads PDFs from MinIO, extracts per-page text with `unpdf`, generates overlapping chunks and `1536`-dimension embeddings, and persists chunks + vectors atomically in PostgreSQL.
+- `packages/ai` (`@enterprise-ai/ai`): Replaceable AI provider abstraction (`EmbeddingProvider`, `LLMProvider`) with centralized Zod config, OpenAI `fetch` clients (`text-embedding-3-small`, `gpt-4o-mini`), timeouts/retries, secret redaction, and USD cost estimation.
+- `packages/database`: Prisma ORM (`prisma-client` + `@prisma/adapter-pg`), `pgvector` vector persistence helpers, and tenant-isolated `PgVectorRetrievalService`.
+- `packages/shared`: Shared domain-neutral constants, health types, document processing contracts, and RAG contracts (`Citation`, `UsageInformation`, `RAGResponse`, `RetrievalService`).
 - `infrastructure/postgres`: Database bootstrap script enabling the `vector` extension (`pgvector`).
 
 ## Prerequisites
@@ -21,11 +22,19 @@ This project follows a **Modular Monolith with an independent background worker*
 
 ## Local Setup
 
-1. Copy the environment template:
+1. Copy the environment template and configure AI/RAG environment variables as needed:
 
    ```bash
    cp .env.example .env
    ```
+
+   Key AI & RAG variables (see `packages/ai/src/config/ai-config.ts` and `apps/api/src/config/env.ts`):
+   - `OPENAI_API_KEY`: Required by `apps/worker` at startup to generate chunk embeddings and by `apps/api` to answer `POST /api/v1/conversations/:id/messages` (when unset, the API still starts and returns `503 AI_PROVIDER_NOT_CONFIGURED` for RAG queries).
+   - `AI_PROVIDER` (`openai`), `OPENAI_BASE_URL` (`https://api.openai.com/v1`), `OPENAI_EMBEDDING_MODEL` (`text-embedding-3-small`), `OPENAI_EMBEDDING_DIMENSIONS` (`1536`, fixed to match the `vector(1536)` schema/index), `OPENAI_CHAT_MODEL` (`gpt-4o-mini`).
+   - `AI_REQUEST_TIMEOUT_MS` (`30000`), `AI_MAX_RETRIES` (`3`), `AI_RETRY_BASE_DELAY_MS` (`500`), `AI_EMBEDDING_BATCH_SIZE` (`64`).
+   - `RAG_DEFAULT_TOP_K` (`5`), `RAG_MAX_CONTEXT_CHARS` (`24000`).
+
+   > **Note on pre-Sprint-4 documents**: Document chunks ingested before Sprint 4 (`embedding IS NULL`) are excluded from semantic vector retrieval until their documents are reprocessed (`POST /api/v1/documents/:id/reprocess`).
 
 2. Install workspace dependencies:
 
@@ -63,7 +72,7 @@ This project follows a **Modular Monolith with an independent background worker*
 
 - `pnpm dev`: Start the Fastify API in watch mode (`tsx watch`).
 - `pnpm dev:worker`: Start the `@enterprise-ai/worker` BullMQ consumer in watch mode (`tsx watch`).
-- `pnpm build`: Compile all workspace packages (`@enterprise-ai/shared`, `@enterprise-ai/database`, `@enterprise-ai/api`, `@enterprise-ai/worker`).
+- `pnpm build`: Compile all workspace packages (`@enterprise-ai/shared`, `@enterprise-ai/database`, `@enterprise-ai/ai`, `@enterprise-ai/api`, `@enterprise-ai/worker`).
 - `pnpm typecheck`: Run TypeScript type checking across `src` and `tests`.
 - `pnpm lint`: Run ESLint across the monorepo.
 - `pnpm test`: Run the Vitest test suite (`vitest run --configLoader native`).

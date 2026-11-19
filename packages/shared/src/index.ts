@@ -9,6 +9,11 @@ export {
   DOCUMENT_PROCESSING_QUEUE_NAME,
   MAX_DOCUMENT_FILE_SIZE_BYTES,
 } from './constants/documents.js';
+export {
+  DEFAULT_RETRIEVAL_TOP_K,
+  EMBEDDING_DIMENSIONS,
+  MAX_RETRIEVAL_TOP_K,
+} from './constants/rag.js';
 export { DOCUMENT_STATUS, PROCESSING_JOB_STATUS } from './types/documents.js';
 export type {
   DocumentChunkMetadata,
@@ -23,3 +28,11 @@ export type {
   HealthResponse,
   ReadinessResponse,
 } from './types/health.js';
+export type {
+  Citation,
+  RAGResponse,
+  RetrievalService,
+  RetrieveChunksInput,
+  RetrievedChunk,
+  UsageInformation,
+} from './types/rag.js';
