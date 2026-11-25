@@ -1,4 +1,5 @@
 export {
+  DEFAULT_AI_EMBEDDING_BATCH_DELAY_MS,
   DEFAULT_AI_EMBEDDING_BATCH_SIZE,
   DEFAULT_AI_MAX_RETRIES,
   DEFAULT_AI_PROVIDER,
@@ -7,6 +8,7 @@ export {
   DEFAULT_EMBEDDING_PROVIDER,
   DEFAULT_GEMINI_BASE_URL,
   DEFAULT_GEMINI_CHAT_MODEL,
+  DEFAULT_GEMINI_EMBEDDING_BATCH_SIZE,
   DEFAULT_GEMINI_EMBEDDING_DIMENSIONS,
   DEFAULT_GEMINI_EMBEDDING_MODEL,
   DEFAULT_GROQ_BASE_URL,
@@ -90,13 +92,16 @@ export {
 } from './providers/factory.js';
 export type { ProviderFactoryOverrides } from './providers/factory.js';
 export type { GeminiClientOptions } from './providers/gemini-http.js';
-export { GeminiHttpClient } from './providers/gemini-http.js';
+export {
+  extractGeminiRetryAfterMs,
+  GeminiHttpClient,
+} from './providers/gemini-http.js';
 export type {
   FetchLike,
   JsonHttpClientOptions,
   SleepLike,
 } from './providers/http-client.js';
-export { JsonHttpClient } from './providers/http-client.js';
+export { JsonHttpClient, sleepWithAbort } from './providers/http-client.js';
 export type { OllamaClientOptions } from './providers/ollama-http.js';
 export { OllamaHttpClient } from './providers/ollama-http.js';
 export type { OpenAIClientOptions } from './providers/openai-http.js';

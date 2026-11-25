@@ -32,6 +32,7 @@ export const DEFAULT_GEMINI_BASE_URL =
   'https://generativelanguage.googleapis.com/v1beta';
 export const DEFAULT_GEMINI_EMBEDDING_MODEL = 'gemini-embedding-001';
 export const DEFAULT_GEMINI_EMBEDDING_DIMENSIONS = EMBEDDING_DIMENSIONS;
+export const DEFAULT_GEMINI_EMBEDDING_BATCH_SIZE = 20;
 export const DEFAULT_GEMINI_CHAT_MODEL = 'gemini-2.5-flash';
 
 export const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
@@ -48,6 +49,7 @@ export const DEFAULT_AI_REQUEST_TIMEOUT_MS = 30_000;
 export const DEFAULT_AI_MAX_RETRIES = 3;
 export const DEFAULT_AI_RETRY_BASE_DELAY_MS = 500;
 export const DEFAULT_AI_EMBEDDING_BATCH_SIZE = 64;
+export const DEFAULT_AI_EMBEDDING_BATCH_DELAY_MS = 1000;
 
 function emptyStringToUndefined(value: unknown): unknown {
   if (typeof value === 'string' && value.trim() === '') {
@@ -157,12 +159,16 @@ const aiEnvSchema = z.object({
     .min(0)
     .max(60_000)
     .default(DEFAULT_AI_RETRY_BASE_DELAY_MS),
-  AI_EMBEDDING_BATCH_SIZE: z.coerce
+  AI_EMBEDDING_BATCH_SIZE: z.preprocess(
+    emptyStringToUndefined,
+    z.coerce.number().int().min(1).max(2048).optional(),
+  ),
+  AI_EMBEDDING_BATCH_DELAY_MS: z.coerce
     .number()
     .int()
-    .min(1)
-    .max(2048)
-    .default(DEFAULT_AI_EMBEDDING_BATCH_SIZE),
+    .min(0)
+    .max(60_000)
+    .default(DEFAULT_AI_EMBEDDING_BATCH_DELAY_MS),
 });
 
 export interface AIConfig {
@@ -180,6 +186,7 @@ export interface AIConfig {
     baseUrl: string;
     embeddingModel: string;
     embeddingDimensions: number;
+    embeddingBatchSize: number;
     chatModel: string;
   };
   openai: {
@@ -199,6 +206,7 @@ export interface AIConfig {
   maxRetries: number;
   retryBaseDelayMs: number;
   embeddingBatchSize: number;
+  embeddingBatchDelayMs: number;
 }
 
 /**
@@ -261,11 +269,19 @@ export function loadAIConfig(
     parsed.data.AI_PROVIDER ??
     DEFAULT_LLM_PROVIDER;
 
-  const embeddingProvider: EmbeddingProviderType =
-    parsed.data.AI_EMBEDDING_PROVIDER ??
-    (parsed.data.AI_PROVIDER && parsed.data.AI_PROVIDER !== 'groq'
-      ? parsed.data.AI_PROVIDER
-      : DEFAULT_EMBEDDING_PROVIDER);
+  let embeddingProvider: EmbeddingProviderType;
+  if (parsed.data.AI_EMBEDDING_PROVIDER !== undefined) {
+    embeddingProvider = parsed.data.AI_EMBEDDING_PROVIDER;
+  } else if (parsed.data.AI_PROVIDER !== undefined) {
+    embeddingProvider =
+      parsed.data.AI_PROVIDER !== 'groq'
+        ? parsed.data.AI_PROVIDER
+        : DEFAULT_EMBEDDING_PROVIDER;
+  } else {
+    embeddingProvider = parsed.data.GEMINI_API_KEY
+      ? 'gemini'
+      : DEFAULT_EMBEDDING_PROVIDER;
+  }
 
   return {
     provider: llmProvider,
@@ -281,6 +297,9 @@ export function loadAIConfig(
       baseUrl: parsed.data.GEMINI_BASE_URL,
       embeddingModel: parsed.data.GEMINI_EMBEDDING_MODEL,
       embeddingDimensions: parsed.data.GEMINI_EMBEDDING_DIMENSIONS,
+      embeddingBatchSize:
+        parsed.data.AI_EMBEDDING_BATCH_SIZE ??
+        DEFAULT_GEMINI_EMBEDDING_BATCH_SIZE,
       chatModel: parsed.data.GEMINI_CHAT_MODEL,
     },
     openai: {
@@ -299,6 +318,8 @@ export function loadAIConfig(
     requestTimeoutMs: parsed.data.AI_REQUEST_TIMEOUT_MS,
     maxRetries: parsed.data.AI_MAX_RETRIES,
     retryBaseDelayMs: parsed.data.AI_RETRY_BASE_DELAY_MS,
-    embeddingBatchSize: parsed.data.AI_EMBEDDING_BATCH_SIZE,
+    embeddingBatchSize:
+      parsed.data.AI_EMBEDDING_BATCH_SIZE ?? DEFAULT_AI_EMBEDDING_BATCH_SIZE,
+    embeddingBatchDelayMs: parsed.data.AI_EMBEDDING_BATCH_DELAY_MS,
   };
 }

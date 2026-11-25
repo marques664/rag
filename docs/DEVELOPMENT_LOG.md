@@ -199,3 +199,15 @@ Completed the remaining scheduled production-hardening and evaluation tasks (Pos
 - **`packages/shared`, `apps/api` & `apps/worker` (Distributed Tracing)**: Added `TelemetryTracer` and W3C `traceparent` propagation (`packages/shared/src/telemetry/tracing.ts`), `x-trace-id` / `traceparent` headers + `http.request` span in `apps/api/src/app.ts`, `rag.*` child spans in `RagService`, and `worker.*` spans in `apps/worker/src/processors/document-process.processor.ts`.
 - **`packages/ai` & `evaluation/` (Benchmarks & RAGAS)**: Added retrieval evaluation metrics (`packages/ai/src/evaluation/retrieval-metrics.ts`, `evaluation.test.ts`), benchmark dataset (`evaluation/dataset.json`), runnable PostgreSQL benchmark script (`evaluation/run_benchmark.mjs`), Python RAGAS script (`evaluation/evaluate_ragas.py`), and generated `evaluation/BENCHMARK_REPORT.md`.
 - **`apps/web` (UX & Animations)**: Added CSS keyframe animations with `prefers-reduced-motion` support (`globals.css`), gradient hero + workflow cards (`page.tsx`), password visibility toggle (`auth-form.tsx`), slide-in mobile drawer + route transitions (`app-shell.tsx`), starter prompt pills + 3-dot typing indicator + copy answer + animated citations (`chat-workspace.tsx`, `citation-card.tsx`), animated drag-and-drop + shimmer skeletons + Ask AI shortcut (`documents-workspace.tsx`), and animated KPI cards & progress bars (`analytics-dashboard.tsx`).
+
+## 2026-11-25 — Paced Gemini Embeddings for Large PDFs & BullMQ Worker Lock Hardening
+
+### Summary
+
+Resolved `429` burst rate-limit failures when embedding large PDFs (100+ chunks) with Gemini, auto-enabled paced Gemini embeddings when `GEMINI_API_KEY` is configured (keeping `AI_EMBEDDING_PROVIDER=none` as explicit opt-out), and extended BullMQ worker lock duration for long-running multi-batch ingestion jobs.
+
+### Implemented
+
+- **`packages/ai`**: Added `extractGeminiRetryAfterMs` (parsing `google.rpc.RetryInfo` `retryDelay` and `"Please retry in Xs"` hints) with a `65_000ms` cap and `AbortSignal`-safe `sleepWithAbort`; set `DEFAULT_GEMINI_EMBEDDING_BATCH_SIZE = 20` and `AI_EMBEDDING_BATCH_DELAY_MS = 1000`; auto-selected `'gemini'` in `loadAIConfig` when `GEMINI_API_KEY` is set and `AI_EMBEDDING_PROVIDER` / `AI_PROVIDER` are unset (48/48 `packages/ai` unit tests passed).
+- **`apps/worker`**: Added `WORKER_LOCK_DURATION_MS` (`120_000ms` default) and `stalled` event logging in `createDocumentProcessingWorker` (`apps/worker/src/queues/document-processing.worker.ts`, `config/env.ts`, `worker.ts`).
+- **`apps/api`, `.env.example` & Docs**: Refined `apps/api/src/server.ts` fallback logging, updated `.env.example` (`WORKER_LOCK_DURATION_MS=120000`, `AI_EMBEDDING_BATCH_DELAY_MS=1000`, `RAG_RETRIEVAL_STRATEGY=hybrid` with auto-selected Gemini when `GEMINI_API_KEY` is set), and updated `README.md`, `docs/PROJECT_STATUS.md`, `docs/TECHNICAL_DECISIONS.md` (`TD-029`), and `docs/DEVELOPMENT_LOG.md`.

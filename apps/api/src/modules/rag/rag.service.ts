@@ -11,12 +11,15 @@ import {
 import { XmlContextAssemblyService } from './context-assembly.service.js';
 import {
   buildGroundedUserPrompt,
+  buildQueryRewritePrompt,
   GROUNDED_SYSTEM_PROMPT,
   INSUFFICIENT_CONTEXT_ANSWER,
+  QUERY_REWRITE_SYSTEM_PROMPT,
 } from './rag.prompt.js';
 import type {
   AnswerQuestionInput,
   ContextAssemblyService,
+  ConversationHistoryTurn,
   DetailedRAGResponse,
   RagServiceDependencies,
   RagStageLatencies,
@@ -75,6 +78,70 @@ export class RagService {
     );
   }
 
+  private async contextualizeFollowUpQuestion(
+    question: string,
+    history: readonly ConversationHistoryTurn[] | undefined,
+    signal?: AbortSignal,
+    tracer?: RagServiceDependencies['tracer'],
+    traceContext?: AnswerQuestionInput['traceContext'],
+  ): Promise<string> {
+    if (!history || history.length === 0) {
+      return question;
+    }
+
+    const fallbackRewrite = (): string => {
+      const lastUserTurn = [...history]
+        .reverse()
+        .find((turn) => turn.role === 'user');
+      if (!lastUserTurn) {
+        return question;
+      }
+      return `${lastUserTurn.content.slice(0, 160)} ${question}`.trim();
+    };
+
+    try {
+      const runRewrite = () =>
+        this.deps.llmProvider.generate({
+          systemPrompt: QUERY_REWRITE_SYSTEM_PROMPT,
+          messages: [
+            {
+              role: 'user',
+              content: buildQueryRewritePrompt(question, history),
+            },
+          ],
+          temperature: 0,
+          maxTokens: 160,
+          responseFormat: 'json_object',
+          signal,
+        });
+
+      const rewriteRes = tracer
+        ? await tracer.withSpan(
+            'rag.query_rewrite',
+            traceContext,
+            { 'rag.history_turns': history.length },
+            runRewrite,
+          )
+        : await runRewrite();
+
+      const cleaned = rewriteRes.content
+        .trim()
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/, '')
+        .trim();
+      const parsed = JSON.parse(cleaned) as { standaloneQuestion?: unknown };
+      if (
+        typeof parsed.standaloneQuestion === 'string' &&
+        parsed.standaloneQuestion.trim().length > 0
+      ) {
+        return parsed.standaloneQuestion.trim();
+      }
+      return fallbackRewrite();
+    } catch {
+      return fallbackRewrite();
+    }
+  }
+
   private async runAnswerQuestion(
     input: AnswerQuestionInput,
     traceContext: AnswerQuestionInput['traceContext'],
@@ -83,6 +150,14 @@ export class RagService {
     const startedAt = performance.now();
     const strategy = input.strategy ?? this.defaultStrategy;
     const requestedTopK = input.topK ?? this.defaultTopK;
+
+    const retrievalQuery = await this.contextualizeFollowUpQuestion(
+      input.question,
+      input.history,
+      input.signal,
+      tracer,
+      traceContext,
+    );
 
     let embeddingMs = 0;
     let embeddingResult: EmbeddingResult | null = null;
@@ -106,11 +181,11 @@ export class RagService {
               'ai.model': embeddingProvider.model,
             },
             () =>
-              embeddingProvider.embedQuery(input.question, {
+              embeddingProvider.embedQuery(retrievalQuery, {
                 signal: input.signal,
               }),
           )
-        : await embeddingProvider.embedQuery(input.question, {
+        : await embeddingProvider.embedQuery(retrievalQuery, {
             signal: input.signal,
           });
       embeddingMs = Math.max(0, Math.round(performance.now() - embedStartedAt));
@@ -120,7 +195,7 @@ export class RagService {
     const retrievalInput = {
       organizationId: input.organizationId,
       queryEmbedding: embeddingResult?.embedding,
-      queryText: input.question,
+      queryText: retrievalQuery,
       strategy,
       topK: requestedTopK,
       minSimilarity: input.minSimilarity,
@@ -155,7 +230,7 @@ export class RagService {
             { 'rag.input_chunks': retrievedChunks.length },
             async (span) => {
               const ranked = await reranker.rerank(
-                input.question,
+                retrievalQuery,
                 retrievedChunks,
                 requestedTopK,
               );
@@ -163,7 +238,7 @@ export class RagService {
               return ranked;
             },
           )
-        : await reranker.rerank(input.question, retrievedChunks, requestedTopK);
+        : await reranker.rerank(retrievalQuery, retrievedChunks, requestedTopK);
       rerankMs = Math.max(0, Math.round(performance.now() - rerankStartedAt));
     }
 
@@ -233,7 +308,11 @@ export class RagService {
       messages: [
         {
           role: 'user' as const,
-          content: buildGroundedUserPrompt(input.question, assembledContext),
+          content: buildGroundedUserPrompt(
+            input.question,
+            assembledContext,
+            input.history,
+          ),
         },
       ],
       temperature: 0.1,

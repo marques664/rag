@@ -3,10 +3,12 @@ import {
   AIProviderNotConfiguredError,
   createEmbeddingProvider,
   createLLMProvider,
+  DEFAULT_AI_EMBEDDING_BATCH_DELAY_MS,
   DEFAULT_AI_PROVIDER,
   DEFAULT_EMBEDDING_PROVIDER,
   DEFAULT_GEMINI_BASE_URL,
   DEFAULT_GEMINI_CHAT_MODEL,
+  DEFAULT_GEMINI_EMBEDDING_BATCH_SIZE,
   DEFAULT_GEMINI_EMBEDDING_DIMENSIONS,
   DEFAULT_GEMINI_EMBEDDING_MODEL,
   DEFAULT_GROQ_BASE_URL,
@@ -46,6 +48,9 @@ describe('AI config, factories, and pricing', () => {
     expect(config.gemini.embeddingDimensions).toBe(
       DEFAULT_GEMINI_EMBEDDING_DIMENSIONS,
     );
+    expect(config.gemini.embeddingBatchSize).toBe(
+      DEFAULT_GEMINI_EMBEDDING_BATCH_SIZE,
+    );
     expect(config.gemini.chatModel).toBe(DEFAULT_GEMINI_CHAT_MODEL);
 
     expect(config.openai.apiKey).toBeUndefined();
@@ -63,6 +68,34 @@ describe('AI config, factories, and pricing', () => {
     expect(config.maxRetries).toBe(3);
     expect(config.retryBaseDelayMs).toBe(500);
     expect(config.embeddingBatchSize).toBe(64);
+    expect(config.embeddingBatchDelayMs).toBe(
+      DEFAULT_AI_EMBEDDING_BATCH_DELAY_MS,
+    );
+  });
+
+  it('auto-selects gemini embeddings when GEMINI_API_KEY is set and provider overrides are unset, while honoring AI_EMBEDDING_PROVIDER=none', () => {
+    const autoGemini = loadAIConfig({
+      GEMINI_API_KEY: 'AIzaTestKey123456789012345',
+    });
+    expect(autoGemini.llmProvider).toBe('groq');
+    expect(autoGemini.embeddingProvider).toBe('gemini');
+    expect(hasEmbeddingCredentials(autoGemini)).toBe(true);
+
+    const explicitOptOut = loadAIConfig({
+      GEMINI_API_KEY: 'AIzaTestKey123456789012345',
+      AI_EMBEDDING_PROVIDER: 'none',
+    });
+    expect(explicitOptOut.embeddingProvider).toBe('none');
+    expect(hasEmbeddingCredentials(explicitOptOut)).toBe(false);
+
+    const customBatching = loadAIConfig({
+      GEMINI_API_KEY: 'AIzaTestKey123456789012345',
+      AI_EMBEDDING_BATCH_SIZE: '10',
+      AI_EMBEDDING_BATCH_DELAY_MS: '0',
+    });
+    expect(customBatching.embeddingBatchSize).toBe(10);
+    expect(customBatching.gemini.embeddingBatchSize).toBe(10);
+    expect(customBatching.embeddingBatchDelayMs).toBe(0);
   });
 
   it('supports AI_PROVIDER backwards-compatibility and explicit AI_LLM_PROVIDER / AI_EMBEDDING_PROVIDER split', () => {
@@ -131,11 +164,27 @@ describe('AI config, factories, and pricing', () => {
 
     const onlyGroq = loadAIConfig({
       GROQ_API_KEY: 'gsk_test_1234567890',
-      GEMINI_API_KEY: 'AIzaTestKey123456789012345',
     });
     expect(hasLLMCredentials(onlyGroq)).toBe(true);
     expect(hasEmbeddingCredentials(onlyGroq)).toBe(false);
     expect(hasProviderCredentials(onlyGroq)).toBe(false);
+
+    const optOutWithGeminiKey = loadAIConfig({
+      AI_EMBEDDING_PROVIDER: 'none',
+      GROQ_API_KEY: 'gsk_test_1234567890',
+      GEMINI_API_KEY: 'AIzaTestKey123456789012345',
+    });
+    expect(hasLLMCredentials(optOutWithGeminiKey)).toBe(true);
+    expect(hasEmbeddingCredentials(optOutWithGeminiKey)).toBe(false);
+    expect(hasProviderCredentials(optOutWithGeminiKey)).toBe(false);
+
+    const autoGroqPlusGemini = loadAIConfig({
+      GROQ_API_KEY: 'gsk_test_1234567890',
+      GEMINI_API_KEY: 'AIzaTestKey123456789012345',
+    });
+    expect(hasLLMCredentials(autoGroqPlusGemini)).toBe(true);
+    expect(hasEmbeddingCredentials(autoGroqPlusGemini)).toBe(true);
+    expect(hasProviderCredentials(autoGroqPlusGemini)).toBe(true);
 
     const groqPlusGemini = loadAIConfig({
       AI_EMBEDDING_PROVIDER: 'gemini',

@@ -1,7 +1,8 @@
 import { EMBEDDING_DIMENSIONS } from '@enterprise-ai/shared';
 import { z } from 'zod';
 import {
-  DEFAULT_AI_EMBEDDING_BATCH_SIZE,
+  DEFAULT_AI_EMBEDDING_BATCH_DELAY_MS,
+  DEFAULT_GEMINI_EMBEDDING_BATCH_SIZE,
   DEFAULT_GEMINI_EMBEDDING_MODEL,
 } from '../config/ai-config.js';
 import {
@@ -12,6 +13,7 @@ import {
   GeminiHttpClient,
   type GeminiClientOptions,
 } from '../providers/gemini-http.js';
+import { sleepWithAbort, type SleepLike } from '../providers/http-client.js';
 import { validateEmbeddingVector } from './openai-embedding.provider.js';
 import type {
   BatchEmbeddingResult,
@@ -24,6 +26,7 @@ export interface GeminiEmbeddingProviderOptions extends GeminiClientOptions {
   model?: string;
   dimensions?: number;
   batchSize?: number;
+  batchDelayMs?: number;
 }
 
 const geminiEmbedContentResponseSchema = z.object({
@@ -49,13 +52,15 @@ function normalizeGeminiModelId(model: string): string {
 
 /**
  * Google Gemini embedding provider calling :embedContent and :batchEmbedContents
- * with task-type hints and strict fixed-dimension validation.
+ * with task-type hints, inter-batch pacing, and strict fixed-dimension validation.
  */
 export class GeminiEmbeddingProvider implements EmbeddingProvider {
   public readonly providerName = PROVIDER_NAME;
   public readonly model: string;
   public readonly dimensions: number;
   private readonly batchSize: number;
+  private readonly batchDelayMs: number;
+  private readonly sleepImpl: SleepLike;
   private readonly client: GeminiHttpClient;
 
   constructor(options: GeminiEmbeddingProviderOptions) {
@@ -78,7 +83,7 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
     }
 
     const requestedBatchSize =
-      options.batchSize ?? DEFAULT_AI_EMBEDDING_BATCH_SIZE;
+      options.batchSize ?? DEFAULT_GEMINI_EMBEDDING_BATCH_SIZE;
     if (!Number.isInteger(requestedBatchSize) || requestedBatchSize <= 0) {
       throw new AIInvalidRequestError(
         PROVIDER_NAME,
@@ -86,9 +91,22 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
       );
     }
 
+    const batchDelayMs =
+      options.batchDelayMs ?? DEFAULT_AI_EMBEDDING_BATCH_DELAY_MS;
+    if (!Number.isFinite(batchDelayMs) || batchDelayMs < 0) {
+      throw new AIInvalidRequestError(
+        PROVIDER_NAME,
+        'Embedding batchDelayMs must be a non-negative number',
+      );
+    }
+
     this.model = model;
     this.dimensions = dimensions;
     this.batchSize = Math.min(requestedBatchSize, MAX_GEMINI_BATCH_SIZE);
+    this.batchDelayMs = batchDelayMs;
+    this.sleepImpl =
+      options.sleepImpl ??
+      ((ms, signal) => sleepWithAbort(PROVIDER_NAME, ms, signal));
     this.client = new GeminiHttpClient(options);
   }
 
@@ -159,6 +177,10 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
     const modelResource = `models/${this.model}`;
 
     for (let offset = 0; offset < texts.length; offset += this.batchSize) {
+      if (offset > 0 && this.batchDelayMs > 0) {
+        await this.sleepImpl(this.batchDelayMs, options?.signal);
+      }
+
       const batch = texts.slice(offset, offset + this.batchSize);
       const response = await this.client.postJson(
         `/models/${encodeURIComponent(this.model)}:batchEmbedContents`,

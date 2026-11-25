@@ -88,7 +88,9 @@ async function startServer(): Promise<void> {
   if (!hasEmbedCredentials) {
     app.log.info(
       { embeddingProvider: aiConfig.embeddingProvider },
-      'Vector embeddings disabled (AI_EMBEDDING_PROVIDER=none); RAG defaulting to lexical Full-Text Search with active LLM',
+      aiConfig.embeddingProvider === 'none'
+        ? 'Vector embeddings disabled (AI_EMBEDDING_PROVIDER=none); RAG defaulting to lexical Full-Text Search with active LLM'
+        : 'Embedding provider credentials are not configured; RAG defaulting to lexical Full-Text Search with active LLM',
     );
   }
 

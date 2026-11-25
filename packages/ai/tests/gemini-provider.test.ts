@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  AIAbortedError,
   AIAuthenticationError,
   AIInvalidRequestError,
   AIInvalidResponseError,
@@ -7,6 +8,7 @@ import {
   AITimeoutError,
   AIUpstreamError,
   DEFAULT_GEMINI_EMBEDDING_DIMENSIONS,
+  extractGeminiRetryAfterMs,
   GeminiEmbeddingProvider,
   GeminiLLMProvider,
 } from '../src/index.js';
@@ -446,5 +448,160 @@ describe('GeminiEmbeddingProvider and GeminiLLMProvider', () => {
         messages: [{ role: 'user', content: 'Question' }],
       }),
     ).rejects.toThrow(AITimeoutError);
+  });
+
+  it('defaults Gemini batch size to 20 and paces multi-batch calls with AbortSignal-safe sleep', async () => {
+    const batchSizes: number[] = [];
+    const sleepCalls: number[] = [];
+
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (_u, init) => {
+      const reqs = (JSON.parse(String(init?.body)) as { requests: unknown[] })
+        .requests;
+      batchSizes.push(reqs.length);
+      return jsonResponse({
+        embeddings: reqs.map((_, i) => ({ values: makeVector(i) })),
+      });
+    });
+
+    const provider = new GeminiEmbeddingProvider({
+      apiKey: 'AIzaTestFakeKey123456789012345',
+      fetchImpl,
+      sleepImpl: async (ms) => {
+        sleepCalls.push(ms);
+      },
+    });
+
+    // Single batch (<= 20): zero inter-batch delay
+    const singleBatchTexts = Array.from({ length: 15 }, (_, i) => `Small ${i}`);
+    await provider.embedDocuments(singleBatchTexts);
+    expect(batchSizes).toEqual([15]);
+    expect(sleepCalls).toEqual([]);
+
+    // 45 chunks -> batches of 20, 20, 5 with 1000ms sleep between batches
+    batchSizes.length = 0;
+    const largeTexts = Array.from({ length: 45 }, (_, i) => `Large ${i}`);
+    const result = await provider.embedDocuments(largeTexts);
+    expect(result.embeddings).toHaveLength(45);
+    expect(batchSizes).toEqual([20, 20, 5]);
+    expect(sleepCalls).toEqual([1000, 1000]);
+
+    // batchDelayMs = 0 disables pacing sleep
+    sleepCalls.length = 0;
+    const unpacedProvider = new GeminiEmbeddingProvider({
+      apiKey: 'AIzaTestFakeKey123456789012345',
+      batchSize: 2,
+      batchDelayMs: 0,
+      fetchImpl,
+      sleepImpl: async (ms) => {
+        sleepCalls.push(ms);
+      },
+    });
+    await unpacedProvider.embedDocuments(['A', 'B', 'C']);
+    expect(sleepCalls).toEqual([]);
+
+    // AbortSignal cancels inter-batch pacing sleep cleanly
+    const abortController = new AbortController();
+    const abortFetch = vi.fn<typeof fetch>().mockImplementation(async (_u, init) => {
+      const reqs = (JSON.parse(String(init?.body)) as { requests: unknown[] })
+        .requests;
+      abortController.abort();
+      return jsonResponse({
+        embeddings: reqs.map((_, i) => ({ values: makeVector(i) })),
+      });
+    });
+    const abortingProvider = new GeminiEmbeddingProvider({
+      apiKey: 'AIzaTestFakeKey123456789012345',
+      batchSize: 1,
+      batchDelayMs: 5000,
+      fetchImpl: abortFetch,
+    });
+    await expect(
+      abortingProvider.embedDocuments(['First', 'Second'], {
+        signal: abortController.signal,
+      }),
+    ).rejects.toThrow(AIAbortedError);
+  });
+
+  it('extracts Gemini RetryInfo and prose retry delays on 429 and caps sleep at 65000ms', async () => {
+    expect(
+      extractGeminiRetryAfterMs(
+        JSON.stringify({
+          error: {
+            code: 429,
+            message: 'Quota exceeded. Please retry in 42.5s.',
+            details: [
+              {
+                '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+                retryDelay: '42.5s',
+              },
+            ],
+          },
+        }),
+      ),
+    ).toBe(42500);
+
+    expect(
+      extractGeminiRetryAfterMs(
+        JSON.stringify({
+          error: {
+            code: 429,
+            message: 'Rate limit hit. Please retry in 18.2s.',
+          },
+        }),
+      ),
+    ).toBe(18200);
+
+    const sleepDelays: number[] = [];
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            error: {
+              code: 429,
+              status: 'RESOURCE_EXHAUSTED',
+              message: 'Please retry in 42.5s.',
+              details: [
+                {
+                  '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+                  retryDelay: '42.5s',
+                },
+              ],
+            },
+          },
+          429,
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            error: {
+              code: 429,
+              status: 'RESOURCE_EXHAUSTED',
+              message: 'Please retry in 90s.',
+            },
+          },
+          429,
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          embedding: { values: makeVector(7) },
+        }),
+      );
+
+    const provider = new GeminiEmbeddingProvider({
+      apiKey: 'AIzaTestFakeKey123456789012345',
+      maxRetries: 3,
+      retryBaseDelayMs: 500,
+      fetchImpl,
+      sleepImpl: async (ms) => {
+        sleepDelays.push(ms);
+      },
+    });
+
+    const result = await provider.embedQuery('large pdf query');
+    expect(result.embedding).toEqual(makeVector(7));
+    expect(sleepDelays).toEqual([42500, 65000]);
   });
 });

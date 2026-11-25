@@ -30,9 +30,10 @@ export interface JsonHttpClientOptions {
   fetchImpl?: FetchLike;
   sleepImpl?: SleepLike;
   extractErrorDetail?: (rawBody: string, status: number) => string;
+  extractRetryAfterMs?: (rawBody: string, headers: Headers) => number | undefined;
 }
 
-const MAX_RETRY_DELAY_MS = 60_000;
+const MAX_RETRY_DELAY_MS = 65_000;
 const MAX_ERROR_BODY_LENGTH = 300;
 
 function parseRetryAfterMs(headerValue: string | null): number | undefined {
@@ -58,7 +59,7 @@ function parseRetryAfterMs(headerValue: string | null): number | undefined {
   return undefined;
 }
 
-async function defaultSleep(
+export async function sleepWithAbort(
   providerName: string,
   ms: number,
   signal?: AbortSignal,
@@ -121,6 +122,10 @@ export class JsonHttpClient {
     rawBody: string,
     status: number,
   ) => string;
+  private readonly extractRetryAfterMsFn?: (
+    rawBody: string,
+    headers: Headers,
+  ) => number | undefined;
 
   constructor(options: JsonHttpClientOptions) {
     this.providerName = options.providerName;
@@ -134,9 +139,10 @@ export class JsonHttpClient {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.sleepImpl =
       options.sleepImpl ??
-      ((ms, signal) => defaultSleep(this.providerName, ms, signal));
+      ((ms, signal) => sleepWithAbort(this.providerName, ms, signal));
     this.extractErrorDetailFn =
       options.extractErrorDetail ?? defaultExtractErrorDetail;
+    this.extractRetryAfterMsFn = options.extractRetryAfterMs;
   }
 
   public async postJson<TResponse>(
@@ -302,7 +308,9 @@ export class JsonHttpClient {
     }
 
     if (status === 429) {
-      const retryAfterMs = parseRetryAfterMs(headers.get('retry-after'));
+      const retryAfterMs =
+        parseRetryAfterMs(headers.get('retry-after')) ??
+        this.extractRetryAfterMsFn?.(rawBody, headers);
       return new AIRateLimitError(
         this.providerName,
         `${this.providerName} rate limit exceeded (429): ${detail}`,

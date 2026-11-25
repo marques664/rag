@@ -66,9 +66,15 @@ export interface ContextAssemblyService {
   ): AssembledContext;
 }
 
+export interface ConversationHistoryTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface AnswerQuestionInput {
   organizationId: string;
   question: string;
+  history?: readonly ConversationHistoryTurn[];
   strategy?: RetrievalStrategy;
   topK?: number;
   minSimilarity?: number;

@@ -58,6 +58,7 @@ async function startWorker(): Promise<void> {
   const worker = createDocumentProcessingWorker({
     connection: redis,
     concurrency: env.WORKER_CONCURRENCY,
+    lockDurationMs: env.WORKER_LOCK_DURATION_MS,
     database,
     storage,
     extractor,
@@ -72,6 +73,7 @@ async function startWorker(): Promise<void> {
     {
       concurrency: env.WORKER_CONCURRENCY,
       maxAttempts: env.WORKER_MAX_ATTEMPTS,
+      lockDurationMs: env.WORKER_LOCK_DURATION_MS,
       bucket: env.MINIO_BUCKET,
       embeddingMode: embeddingProvider ? 'vector' : 'lexical_only',
       ...(embeddingProvider

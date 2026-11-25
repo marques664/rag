@@ -238,6 +238,32 @@ export class ConversationsRepository {
     };
   }
 
+  async listRecentMessagesForContext(params: {
+    conversationId: string;
+    organizationId: string;
+    userId: string;
+    limit?: number;
+  }): Promise<Array<{ role: MessageRole; content: string }>> {
+    const take = Math.max(1, Math.min(params.limit ?? 6, 20));
+    const recentDesc = await this.db.message.findMany({
+      where: {
+        conversationId: params.conversationId,
+        conversation: {
+          organizationId: params.organizationId,
+          userId: params.userId,
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take,
+      select: {
+        role: true,
+        content: true,
+      },
+    });
+
+    return recentDesc.reverse();
+  }
+
   async persistRagTurnTransaction(params: {
     conversationId: string;
     organizationId: string;

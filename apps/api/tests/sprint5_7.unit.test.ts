@@ -790,6 +790,9 @@ describe('Sprint 5-7 API routing, observability, hybrid RAG, feedback & analytic
         conversation: {
           findFirst: vi.fn().mockResolvedValue({ id: convId }),
         },
+        message: {
+          findMany: vi.fn().mockResolvedValue([]),
+        },
         $transaction: vi.fn().mockImplementation((fn) => fn(tx)),
       } as unknown as DatabaseClient;
 

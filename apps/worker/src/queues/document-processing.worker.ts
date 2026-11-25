@@ -9,10 +9,13 @@ import {
   type DocumentProcessorDeps,
 } from '../processors/document-process.processor.js';
 
+export const DEFAULT_WORKER_LOCK_DURATION_MS = 120_000;
+
 export interface DocumentProcessingWorkerOptions extends DocumentProcessorDeps {
   connection: ConnectionOptions;
   concurrency: number;
   queueName?: string;
+  lockDurationMs?: number;
 }
 
 /**
@@ -25,6 +28,7 @@ export function createDocumentProcessingWorker(
     connection,
     concurrency,
     queueName = DOCUMENT_PROCESSING_QUEUE_NAME,
+    lockDurationMs = DEFAULT_WORKER_LOCK_DURATION_MS,
     ...processorDeps
   } = options;
 
@@ -59,8 +63,16 @@ export function createDocumentProcessingWorker(
     {
       connection,
       concurrency,
+      lockDuration: lockDurationMs,
     },
   );
+
+  worker.on('stalled', (jobId) => {
+    processorDeps.logger.warn(
+      { jobId, lockDurationMs },
+      'BullMQ job lock stalled',
+    );
+  });
 
   worker.on('completed', (job) => {
     processorDeps.logger.debug(

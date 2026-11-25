@@ -2,7 +2,7 @@ import {
   AIProviderError,
   AIProviderNotConfiguredError,
 } from '@enterprise-ai/ai';
-import type { Message } from '@enterprise-ai/database';
+import { MessageRole, type Message } from '@enterprise-ai/database';
 import type { Citation } from '@enterprise-ai/shared';
 import { buildCitationExcerpt } from '../rag/citation-validator.js';
 import {
@@ -223,11 +223,25 @@ export class ConversationsService {
       throw new ConversationNotFoundError();
     }
 
+    const recentMessages = await this.repository.listRecentMessagesForContext({
+      conversationId: input.conversationId,
+      organizationId: input.organizationId,
+      userId: input.userId,
+      limit: 6,
+    });
+    const history = recentMessages.map((msg) => ({
+      role: (msg.role === MessageRole.USER ? 'user' : 'assistant') as
+        | 'user'
+        | 'assistant',
+      content: msg.content,
+    }));
+
     let ragResponse;
     try {
       ragResponse = await this.ragService.answerQuestion({
         organizationId: input.organizationId,
         question: input.content,
+        history,
         topK: input.topK,
         strategy: input.strategy,
         traceContext: input.traceContext,

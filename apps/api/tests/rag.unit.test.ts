@@ -657,5 +657,116 @@ describe('Sprint 4 RAG unit tests', () => {
       expect(createdCitations).toHaveLength(1);
       expect(createdUsageEvents).toHaveLength(1);
     });
+
+    it('contextualizes follow-up questions with conversation history before retrieval and generation', async () => {
+      const retrievalService = makeFakeRetrievalService([makeChunk()]);
+      const embeddingProvider = makeFakeEmbeddingProvider();
+      const generate = vi
+        .fn()
+        .mockResolvedValueOnce({
+          content: JSON.stringify({
+            standaloneQuestion:
+              'Qual a ordem dos comandos no supino em uma competição de powerlifting?',
+          }),
+          model: 'qwen/qwen3.8-27b',
+          finishReason: 'stop',
+          usage: { inputTokens: 60, outputTokens: 20, totalTokens: 80 },
+          latencyMs: 40,
+        })
+        .mockResolvedValueOnce({
+          content: JSON.stringify({
+            answer: 'A ordem dos comandos no supino é Início, Press e Guarda.',
+            insufficientContext: false,
+            citedChunkIds: [CHUNK_1],
+          }),
+          model: 'qwen/qwen3.8-27b',
+          finishReason: 'stop',
+          usage: { inputTokens: 200, outputTokens: 30, totalTokens: 230 },
+          latencyMs: 90,
+        });
+
+      const ragService = new RagService({
+        embeddingProvider,
+        retrievalService,
+        llmProvider: makeFakeLLMProvider({ generate }),
+      });
+
+      const result = await ragService.answerQuestion({
+        organizationId: ORG_A,
+        question: 'E qual a ordem dos comandos?',
+        history: [
+          {
+            role: 'user',
+            content:
+              'Qual a lista de comandos para realizar o supino em uma competição de powerlifting?',
+          },
+          {
+            role: 'assistant',
+            content: 'Os comandos do supino são Início, Press e Guarda.',
+          },
+        ],
+      });
+
+      expect(embeddingProvider.embedQuery).toHaveBeenCalledWith(
+        'Qual a ordem dos comandos no supino em uma competição de powerlifting?',
+        expect.any(Object),
+      );
+      expect(retrievalService.retrieve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queryText:
+            'Qual a ordem dos comandos no supino em uma competição de powerlifting?',
+        }),
+      );
+      const generationCall = generate.mock.calls[1]?.[0];
+      expect(generationCall?.messages[0]?.content).toContain(
+        '<conversation_history>',
+      );
+      expect(generationCall?.messages[0]?.content).toContain('supino');
+      expect(result.insufficientContext).toBe(false);
+      expect(result.citations).toHaveLength(1);
+    });
+
+    it('falls back to merging prior user turn when follow-up rewrite fails', async () => {
+      const retrievalService = makeFakeRetrievalService([makeChunk()]);
+      const generate = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('transient rewrite parse error'))
+        .mockResolvedValueOnce({
+          content: JSON.stringify({
+            answer: 'Resposta baseada nas evidências.',
+            insufficientContext: false,
+            citedChunkIds: [CHUNK_1],
+          }),
+          model: 'qwen/qwen3.8-27b',
+          finishReason: 'stop',
+          usage: { inputTokens: 180, outputTokens: 20, totalTokens: 200 },
+          latencyMs: 80,
+        });
+
+      const ragService = new RagService({
+        retrievalService,
+        llmProvider: makeFakeLLMProvider({ generate }),
+        defaultStrategy: 'lexical',
+      });
+
+      const result = await ragService.answerQuestion({
+        organizationId: ORG_A,
+        question: 'E qual a ordem dos comandos?',
+        history: [
+          {
+            role: 'user',
+            content: 'Quais os comandos do supino no powerlifting?',
+          },
+        ],
+      });
+
+      expect(retrievalService.retrieve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queryText:
+            'Quais os comandos do supino no powerlifting? E qual a ordem dos comandos?',
+        }),
+      );
+      expect(result.insufficientContext).toBe(false);
+    });
   });
 });

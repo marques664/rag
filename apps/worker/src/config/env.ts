@@ -38,6 +38,12 @@ const envSchema = z.object({
     .min(1)
     .max(10)
     .default(DEFAULT_JOB_ATTEMPTS),
+  WORKER_LOCK_DURATION_MS: z.coerce
+    .number()
+    .int()
+    .min(30_000)
+    .max(900_000)
+    .default(120_000),
 });
 
 export type WorkerEnv = z.infer<typeof envSchema>;
