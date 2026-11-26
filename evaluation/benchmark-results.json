@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-19T17:57:38.115Z",
+  "generatedAt": "2026-11-26T01:45:34.032Z",
   "topK": 3,
   "datasetVersion": "1.0.0",
   "caseCount": 7,
@@ -8,19 +8,19 @@
       "strategy": "lexical",
       "topK": 3,
       "caseCount": 7,
-      "meanPrecisionAtK": 0.7381,
+      "meanPrecisionAtK": 0.7857,
       "meanRecallAtK": 1,
       "meanReciprocalRank": 0.7857,
       "hitRateAtK": 1,
-      "avgLatencyMs": 5.73,
+      "avgLatencyMs": 3.88,
       "cases": [
         {
           "caseId": "pt-shirt-natural-question",
-          "precisionAtK": 0.6667,
+          "precisionAtK": 1,
           "recallAtK": 1,
           "reciprocalRank": 1,
           "hitAtK": true,
-          "latencyMs": 12.25
+          "latencyMs": 6.32
         },
         {
           "caseId": "pt-shirt-plural-inflection",
@@ -28,7 +28,7 @@
           "recallAtK": 1,
           "reciprocalRank": 1,
           "hitAtK": true,
-          "latencyMs": 8.41
+          "latencyMs": 4.81
         },
         {
           "caseId": "pt-belt-material",
@@ -36,7 +36,7 @@
           "recallAtK": 1,
           "reciprocalRank": 0.5,
           "hitAtK": true,
-          "latencyMs": 3.66
+          "latencyMs": 3.15
         },
         {
           "caseId": "pt-weigh-in-duration",
@@ -44,7 +44,7 @@
           "recallAtK": 1,
           "reciprocalRank": 1,
           "hitAtK": true,
-          "latencyMs": 3.84
+          "latencyMs": 4.09
         },
         {
           "caseId": "en-exact-code-lookup",
@@ -52,7 +52,7 @@
           "recallAtK": 1,
           "reciprocalRank": 1,
           "hitAtK": true,
-          "latencyMs": 3.02
+          "latencyMs": 3.37
         },
         {
           "caseId": "en-rls-policy-lookup",
@@ -60,7 +60,7 @@
           "recallAtK": 1,
           "reciprocalRank": 1,
           "hitAtK": true,
-          "latencyMs": 3.56
+          "latencyMs": 2.44
         },
         {
           "caseId": "negative-unanswerable",
@@ -68,7 +68,7 @@
           "recallAtK": 1,
           "reciprocalRank": 0,
           "hitAtK": true,
-          "latencyMs": 5.34
+          "latencyMs": 2.96
         }
       ]
     },
@@ -80,7 +80,7 @@
       "meanRecallAtK": 1,
       "meanReciprocalRank": 0.8571,
       "hitRateAtK": 1,
-      "avgLatencyMs": 2.11,
+      "avgLatencyMs": 2.04,
       "cases": [
         {
           "caseId": "pt-shirt-natural-question",
@@ -88,10 +88,18 @@
           "recallAtK": 1,
           "reciprocalRank": 1,
           "hitAtK": true,
-          "latencyMs": 2.5
+          "latencyMs": 4.08
         },
         {
           "caseId": "pt-shirt-plural-inflection",
+          "precisionAtK": 1,
+          "recallAtK": 1,
+          "reciprocalRank": 1,
+          "hitAtK": true,
+          "latencyMs": 2.28
+        },
+        {
+          "caseId": "pt-belt-material",
           "precisionAtK": 1,
           "recallAtK": 1,
           "reciprocalRank": 1,
@@ -99,20 +107,12 @@
           "latencyMs": 1.66
         },
         {
-          "caseId": "pt-belt-material",
-          "precisionAtK": 1,
-          "recallAtK": 1,
-          "reciprocalRank": 1,
-          "hitAtK": true,
-          "latencyMs": 1.8
-        },
-        {
           "caseId": "pt-weigh-in-duration",
           "precisionAtK": 1,
           "recallAtK": 1,
           "reciprocalRank": 1,
           "hitAtK": true,
-          "latencyMs": 1.77
+          "latencyMs": 1.55
         },
         {
           "caseId": "en-exact-code-lookup",
@@ -120,7 +120,7 @@
           "recallAtK": 1,
           "reciprocalRank": 1,
           "hitAtK": true,
-          "latencyMs": 1.82
+          "latencyMs": 1.46
         },
         {
           "caseId": "en-rls-policy-lookup",
@@ -128,7 +128,7 @@
           "recallAtK": 1,
           "reciprocalRank": 1,
           "hitAtK": true,
-          "latencyMs": 3.06
+          "latencyMs": 1.7
         },
         {
           "caseId": "negative-unanswerable",
@@ -136,7 +136,7 @@
           "recallAtK": 1,
           "reciprocalRank": 0,
           "hitAtK": true,
-          "latencyMs": 2.13
+          "latencyMs": 1.55
         }
       ]
     },
@@ -144,19 +144,19 @@
       "strategy": "hybrid",
       "topK": 3,
       "caseCount": 7,
-      "meanPrecisionAtK": 0.7381,
+      "meanPrecisionAtK": 0.7857,
       "meanRecallAtK": 1,
       "meanReciprocalRank": 0.8571,
       "hitRateAtK": 1,
-      "avgLatencyMs": 7.92,
+      "avgLatencyMs": 4.4,
       "cases": [
         {
           "caseId": "pt-shirt-natural-question",
-          "precisionAtK": 0.6667,
+          "precisionAtK": 1,
           "recallAtK": 1,
           "reciprocalRank": 1,
           "hitAtK": true,
-          "latencyMs": 21.62
+          "latencyMs": 14.06
         },
         {
           "caseId": "pt-shirt-plural-inflection",
@@ -164,7 +164,7 @@
           "recallAtK": 1,
           "reciprocalRank": 1,
           "hitAtK": true,
-          "latencyMs": 13.22
+          "latencyMs": 3.81
         },
         {
           "caseId": "pt-belt-material",
@@ -172,7 +172,7 @@
           "recallAtK": 1,
           "reciprocalRank": 1,
           "hitAtK": true,
-          "latencyMs": 5.04
+          "latencyMs": 3.23
         },
         {
           "caseId": "pt-weigh-in-duration",
@@ -180,7 +180,7 @@
           "recallAtK": 1,
           "reciprocalRank": 1,
           "hitAtK": true,
-          "latencyMs": 2.62
+          "latencyMs": 2.37
         },
         {
           "caseId": "en-exact-code-lookup",
@@ -188,7 +188,7 @@
           "recallAtK": 1,
           "reciprocalRank": 1,
           "hitAtK": true,
-          "latencyMs": 6.49
+          "latencyMs": 2.02
         },
         {
           "caseId": "en-rls-policy-lookup",
@@ -196,7 +196,7 @@
           "recallAtK": 1,
           "reciprocalRank": 1,
           "hitAtK": true,
-          "latencyMs": 2.93
+          "latencyMs": 1.91
         },
         {
           "caseId": "negative-unanswerable",
@@ -204,7 +204,7 @@
           "recallAtK": 1,
           "reciprocalRank": 0,
           "hitAtK": true,
-          "latencyMs": 3.49
+          "latencyMs": 3.39
         }
       ]
     }

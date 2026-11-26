@@ -79,6 +79,23 @@ const LEXICAL_QUERY_STOPWORDS = new Set([
   'uma',
   'umas',
   'uns',
+  'lista',
+  'listar',
+  'realizar',
+  'fazer',
+  'usar',
+  'tipo',
+  'tipos',
+  'forma',
+  'maneira',
+  'dizer',
+  'diz',
+  'falar',
+  'fala',
+  'explicar',
+  'explica',
+  'funciona',
+  'funcionar',
   // English grammatical/question words
   'an',
   'and',
@@ -89,15 +106,24 @@ const LEXICAL_QUERY_STOPWORDS = new Set([
   'by',
   'can',
   'could',
+  'describe',
   'did',
   'do',
   'does',
+  'explain',
   'for',
   'from',
   'how',
   'in',
   'is',
+  'list',
   'may',
+  'tell',
+  'type',
+  'types',
+  'use',
+  'using',
+  'way',
   'might',
   'of',
   'on',
@@ -169,6 +195,8 @@ export interface ReciprocalRankFusionInput {
   lexicalChunks: readonly RetrievedChunk[];
   topK: number;
   rrfK?: number;
+  semanticWeight?: number;
+  lexicalWeight?: number;
 }
 
 interface LexicalChunkRow {
@@ -238,6 +266,8 @@ export function fuseWithReciprocalRankFusion(
   if (!Number.isFinite(rrfK) || rrfK <= 0) {
     throw new Error('rrfK must be a positive finite number');
   }
+  const semanticWeight = input.semanticWeight ?? 1;
+  const lexicalWeight = input.lexicalWeight ?? 1;
 
   interface FusedEntry {
     chunk: RetrievedChunk;
@@ -251,7 +281,7 @@ export function fuseWithReciprocalRankFusion(
 
   input.semanticChunks.forEach((chunk, index) => {
     const rank = index + 1;
-    const contribution = 1 / (rrfK + rank);
+    const contribution = semanticWeight / (rrfK + rank);
     const existing = byChunkId.get(chunk.chunkId);
 
     if (existing) {
@@ -273,7 +303,7 @@ export function fuseWithReciprocalRankFusion(
 
   input.lexicalChunks.forEach((chunk, index) => {
     const rank = index + 1;
-    const contribution = 1 / (rrfK + rank);
+    const contribution = lexicalWeight / (rrfK + rank);
     const existing = byChunkId.get(chunk.chunkId);
 
     if (existing) {
@@ -447,6 +477,8 @@ export class HybridRetrievalService implements RetrievalService {
       lexicalChunks,
       topK,
       rrfK: this.rrfK,
+      semanticWeight: 1.6,
+      lexicalWeight: 0.7,
     });
   }
 

@@ -1,13 +1,13 @@
 # RAG Retrieval Benchmark Report
 
-- Generated at: `2026-11-19T17:57:38.115Z`
+- Generated at: `2026-11-26T01:45:34.032Z`
 - Dataset version: `1.0.0` (7 cases, `topK = 3`)
 
 | Strategy | Precision@3 | Recall@3 | MRR | HitRate@3 | Avg Latency (ms) |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `lexical` | 0.7381 | 1.0000 | 0.7857 | 1.0000 | 5.73 |
-| `semantic` | 0.8571 | 1.0000 | 0.8571 | 1.0000 | 2.11 |
-| `hybrid` | 0.7381 | 1.0000 | 0.8571 | 1.0000 | 7.92 |
+| `lexical` | 0.7857 | 1.0000 | 0.7857 | 1.0000 | 3.88 |
+| `semantic` | 0.8571 | 1.0000 | 0.8571 | 1.0000 | 2.04 |
+| `hybrid` | 0.7857 | 1.0000 | 0.8571 | 1.0000 | 4.40 |
 
 ## Per-Case Breakdown (`hybrid` vs `lexical`)
 

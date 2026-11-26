@@ -3,7 +3,10 @@ import {
   estimateModelCostUsd,
   type EmbeddingResult,
 } from '@enterprise-ai/ai';
-import { DEFAULT_RETRIEVAL_TOP_K } from '@enterprise-ai/shared';
+import {
+  DEFAULT_RETRIEVAL_TOP_K,
+  MAX_RETRIEVAL_TOP_K,
+} from '@enterprise-ai/shared';
 import {
   parseStructuredLLMResponse,
   validateCitations,
@@ -191,13 +194,17 @@ export class RagService {
       embeddingMs = Math.max(0, Math.round(performance.now() - embedStartedAt));
     }
 
+    const retrievalTopK = this.deps.reranker
+      ? Math.min(MAX_RETRIEVAL_TOP_K, Math.max(requestedTopK, requestedTopK * 3))
+      : requestedTopK;
+
     const retrievalStartedAt = performance.now();
     const retrievalInput = {
       organizationId: input.organizationId,
       queryEmbedding: embeddingResult?.embedding,
       queryText: retrievalQuery,
       strategy,
-      topK: requestedTopK,
+      topK: retrievalTopK,
       minSimilarity: input.minSimilarity,
       documentIds: input.documentIds,
     };
@@ -205,7 +212,7 @@ export class RagService {
       ? await tracer.withSpan(
           'rag.retrieval',
           traceContext,
-          { 'rag.strategy': strategy, 'rag.top_k': requestedTopK },
+          { 'rag.strategy': strategy, 'rag.top_k': retrievalTopK },
           async (span) => {
             const chunks = await this.deps.retrievalService.retrieve(retrievalInput);
             span.setAttributes({ 'rag.retrieved_count': chunks.length });

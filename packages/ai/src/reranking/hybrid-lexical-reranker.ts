@@ -21,6 +21,15 @@ const DEFAULT_LEXICAL_WEIGHT = 0.3;
 const DEFAULT_PHRASE_WEIGHT = 0.15;
 const MIN_EXACT_PHRASE_LENGTH = 3;
 
+const RERANKER_STOPWORDS = new Set([
+  'a', 'ao', 'aos', 'as', 'com', 'como', 'da', 'das', 'de', 'do', 'dos',
+  'e', 'em', 'essa', 'esse', 'esta', 'este', 'na', 'nas', 'no', 'nos',
+  'o', 'os', 'ou', 'para', 'pela', 'pelo', 'por', 'qual', 'quais', 'que',
+  'sao', 'se', 'sem', 'ser', 'sobre', 'um', 'uma', 'lista', 'realizar',
+  'an', 'and', 'are', 'at', 'by', 'for', 'from', 'how', 'in', 'is', 'of',
+  'on', 'or', 'the', 'to', 'what', 'which', 'with',
+]);
+
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) {
     return 0;
@@ -106,8 +115,14 @@ export class HybridLexicalReranker implements RerankerService {
 
     const maxRrfScore = this.findMaxRrfScore(chunks);
     const foldedQuery = normalizeWhitespace(foldForLexicalMatch(query));
+    const rawQueryTokens = tokenizeNormalized(foldedQuery);
+    const filteredQueryTokens = rawQueryTokens.filter(
+      (token) => !RERANKER_STOPWORDS.has(token),
+    );
     const uniqueQueryTerms = Array.from(
-      new Set(tokenizeNormalized(foldedQuery)),
+      new Set(
+        filteredQueryTokens.length > 0 ? filteredQueryTokens : rawQueryTokens,
+      ),
     );
 
     if (uniqueQueryTerms.length === 0) {

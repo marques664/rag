@@ -508,7 +508,7 @@ describe('Sprint 5-7 API routing, observability, hybrid RAG, feedback & analytic
           organizationId: ORG_A,
           queryText: 'How does pgvector HNSW work?',
           strategy: 'hybrid',
-          topK: 4,
+          topK: 12,
         }),
       );
       expect(reranker.rerank).toHaveBeenCalledWith(

@@ -88,7 +88,7 @@ function ChatWorkspaceInner({
     useState<RagCapabilities | null>(null);
   const [strategy, setStrategy] = useState<RetrievalStrategy>('hybrid');
   const strategyTouchedRef = useRef(false);
-  const [topK, setTopK] = useState<number>(5);
+  const [topK, setTopK] = useState<number>(8);
   const [question, setQuestion] = useState('');
 
   const [loadingList, setLoadingList] = useState(false);
@@ -500,9 +500,9 @@ function ChatWorkspaceInner({
                   onChange={(e) => setTopK(Number(e.target.value))}
                   className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500"
                 >
-                  <option value={3}>3</option>
                   <option value={5}>5</option>
-                  <option value={10}>10</option>
+                  <option value={8}>8</option>
+                  <option value={12}>12</option>
                 </select>
               </label>
             </div>
